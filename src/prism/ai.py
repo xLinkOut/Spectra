@@ -24,7 +24,7 @@ class CategorisedTransaction(BaseModel):
     amount: float
     currency: str
     date: str
-    recurring: bool = False
+    recurring: str = ""   # "Subscription", "Salary/Income", or empty
 
 
 # ── Prompt ───────────────────────────────────────────────────────
@@ -39,9 +39,12 @@ RULES:
 2. Assign a category from the list of existing categories if one fits.
 3. If no existing category fits, create a meaningful new one in English.
 4. If truly ambiguous, use the category "Other".
-5. Set "recurring" to true if the transaction looks like a subscription or \
-   recurring payment (e.g. Netflix, Spotify, Apple, iCloud, gym memberships, \
-   insurance, phone plans, streaming services, SaaS). Otherwise set it to false.
+5. Set "recurring" based on these rules:
+   - "Subscription" for recurring outgoing payments (Netflix, Spotify, Apple, \
+     iCloud, gym, insurance, phone plans, streaming, SaaS).
+   - "Salary/Income" for recurring incoming payments (salary, stipend, pension, \
+     regular transfers from employer, freelance recurring payments).
+   - "" (empty string) for one-off transactions.
 6. Reply ONLY with a valid JSON array, no extra text.
 
 OUTPUT FORMAT (JSON array):
@@ -53,7 +56,7 @@ OUTPUT FORMAT (JSON array):
     "amount": <amount as number>,
     "currency": "<currency code>",
     "date": "<YYYY-MM-DD>",
-    "recurring": <true or false>
+    "recurring": "<Subscription|Salary/Income|>"
   }
 ]
 """
@@ -201,18 +204,39 @@ def categorise(
     results: list[CategorisedTransaction] = []
     for item in items:
         try:
+            amount = float(item.get("amount", 0))
             results.append(
                 CategorisedTransaction(
                     original_description=item.get("original", ""),
                     clean_name=item.get("clean_name", ""),
                     category=item.get("category", "Other"),
-                    amount=float(item.get("amount", 0)),
+                    amount=amount,
                     currency=item.get("currency", "EUR"),
                     date=item.get("date", ""),
-                    recurring=bool(item.get("recurring", False)),
+                    recurring=_normalize_recurring(item.get("recurring", ""), amount),
                 )
             )
         except Exception:
             logger.warning("Skipping malformed LLM item: %s", item)
 
     return results
+
+
+def _normalize_recurring(value: Any, amount: float) -> str:
+    """Normalize the AI's recurring field to a consistent label."""
+    if isinstance(value, bool):
+        if not value:
+            return ""
+        return "Salary/Income" if amount > 0 else "Subscription"
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in ("", "false", "no", "none"):
+            return ""
+        if v in ("true", "yes"):
+            return "Salary/Income" if amount > 0 else "Subscription"
+        if "subscription" in v:
+            return "Subscription"
+        if "salary" in v or "income" in v:
+            return "Salary/Income"
+        return value.strip()
+    return ""

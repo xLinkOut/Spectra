@@ -1,4 +1,4 @@
-"""Dashboard — builds a summary tab with 3 charts in Google Sheets."""
+"""Dashboard — builds a summary tab with 3 charts + recurring cash flow in Google Sheets."""
 
 from __future__ import annotations
 
@@ -28,9 +28,13 @@ def refresh_dashboard(sheets_client: Any) -> None:
         logger.warning("Required columns not found: %s", header)
         return
 
+    merch_idx = header.index("Merchant") if "Merchant" in header else None
+    recur_idx = header.index("Recurring") if "Recurring" in header else None
+
     # ── 2. Compute summaries ──────────────────────────────────────
     cat_totals: dict[str, float] = defaultdict(float)
     monthly: dict[str, dict[str, float]] = defaultdict(lambda: {"income": 0.0, "expenses": 0.0})
+    recurring_items: dict[str, dict[str, Any]] = {}
 
     for row in all_rows[1:]:
         if len(row) <= max(date_idx, cat_idx, amt_idx):
@@ -42,11 +46,9 @@ def refresh_dashboard(sheets_client: Any) -> None:
         except (ValueError, IndexError):
             continue
 
-        # Category totals (expenses only, absolute value)
         if amount < 0:
             cat_totals[category] += abs(amount)
 
-        # Monthly breakdown
         try:
             month = datetime.strptime(date_str, "%Y-%m-%d").strftime("%Y-%m")
         except ValueError:
@@ -56,9 +58,19 @@ def refresh_dashboard(sheets_client: Any) -> None:
         else:
             monthly[month]["expenses"] += abs(amount)
 
-    # Sort by spending
+        # Recurring items
+        if recur_idx is not None and recur_idx < len(row):
+            recur_type = row[recur_idx].strip()
+            if recur_type:
+                merchant = row[merch_idx].strip() if merch_idx and merch_idx < len(row) else category
+                key = merchant.lower()
+                if key not in recurring_items:
+                    recurring_items[key] = {"name": merchant, "type": recur_type, "total": 0.0, "count": 0}
+                recurring_items[key]["total"] += amount
+                recurring_items[key]["count"] += 1
+
     sorted_cats = sorted(cat_totals.items(), key=lambda x: x[1], reverse=True)
-    sorted_months = sorted(monthly.keys())[-6:]  # Last 6 months
+    sorted_months = sorted(monthly.keys())[-6:]
 
     # ── 3. Get or create Dashboard worksheet ──────────────────────
     ss = sheets_client._spreadsheet
@@ -72,31 +84,51 @@ def refresh_dashboard(sheets_client: Any) -> None:
 
     # ── 4. Write summary tables ───────────────────────────────────
 
-    # Table A: Spending by Category
+    # Table A: Spending by Category (A1)
     cat_header = [["Category", "Total Spent (€)"]]
     cat_rows = [[name, round(total, 2)] for name, total in sorted_cats]
     ws.update("A1", cat_header + cat_rows)
 
-    # Table B: Monthly summary (starts at column D)
+    # Table B: Monthly summary (D1)
     month_header = [["Month", "Income (€)", "Expenses (€)", "Net (€)"]]
     month_rows = [
-        [
-            m,
-            round(monthly[m]["income"], 2),
-            round(monthly[m]["expenses"], 2),
-            round(monthly[m]["income"] - monthly[m]["expenses"], 2),
-        ]
+        [m, round(monthly[m]["income"], 2), round(monthly[m]["expenses"], 2),
+         round(monthly[m]["income"] - monthly[m]["expenses"], 2)]
         for m in sorted_months
     ]
     ws.update("D1", month_header + month_rows)
 
+    # Table C: Recurring Cash Flow (I1)
+    recur_rows: list[list[Any]] = []
+    if recurring_items:
+        subs = sorted(
+            [v for v in recurring_items.values() if v["type"] == "Subscription"],
+            key=lambda x: x["total"],
+        )
+        income = sorted(
+            [v for v in recurring_items.values() if v["type"] == "Salary/Income"],
+            key=lambda x: x["total"], reverse=True,
+        )
+
+        recur_header = [["Recurring Cash Flow", "Type", "Amount (€)"]]
+        for item in subs + income:
+            avg = round(item["total"] / max(item["count"], 1), 2)
+            recur_rows.append([item["name"], item["type"], avg])
+
+        sub_total = round(sum(v["total"] / max(v["count"], 1) for v in subs), 2)
+        inc_total = round(sum(v["total"] / max(v["count"], 1) for v in income), 2)
+        recur_rows.append(["", "", ""])
+        recur_rows.append(["Total Subscriptions/mo", "", sub_total])
+        recur_rows.append(["Total Recurring Income/mo", "", inc_total])
+
+        ws.update("I1", recur_header + recur_rows)
+
     logger.info(
-        "Dashboard data written: %d categories, %d months",
-        len(sorted_cats), len(sorted_months),
+        "Dashboard data written: %d categories, %d months, %d recurring items",
+        len(sorted_cats), len(sorted_months), len(recurring_items),
     )
 
-    # ── 4b. Format Dashboard headers ──────────────────────────────
-    # Apply same navy-bold style as Transactions sheet to both header rows
+    # ── 4b. Format ALL Dashboard headers ──────────────────────────
     try:
         from googleapiclient.discovery import build  # type: ignore[import-untyped]
         _svc = build("sheets", "v4", credentials=sheets_client._creds)
@@ -111,6 +143,7 @@ def refresh_dashboard(sheets_client: Any) -> None:
             _header_ranges = [
                 {"sheetId": _dash_id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 2},   # A1:B1
                 {"sheetId": _dash_id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 3, "endColumnIndex": 7},   # D1:G1
+                {"sheetId": _dash_id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 8, "endColumnIndex": 11},  # I1:K1
             ]
             _fmt_requests = [
                 {
@@ -125,34 +158,19 @@ def refresh_dashboard(sheets_client: Any) -> None:
                 }
                 for r in _header_ranges
             ]
+            # Auto-resize all columns
+            _fmt_requests.append({
+                "autoResizeDimensions": {"dimensions": {
+                    "sheetId": _dash_id, "dimension": "COLUMNS",
+                    "startIndex": 0, "endIndex": 12,
+                }}
+            })
             _svc.spreadsheets().batchUpdate(
                 spreadsheetId=sheets_client._spreadsheet_id,
                 body={"requests": _fmt_requests},
             ).execute()
     except Exception as e:
-        logger.warning("Dashboard header formatting failed: %s", e)
-
-    # ── Auto-resize Dashboard columns ─────────────────────────────
-    try:
-        from googleapiclient.discovery import build  # type: ignore[import-untyped]
-        service_early = build("sheets", "v4", credentials=sheets_client._creds)
-        meta_early = service_early.spreadsheets().get(spreadsheetId=sheets_client._spreadsheet_id).execute()
-        dash_id_early = next(
-            (s["properties"]["sheetId"] for s in meta_early["sheets"]
-             if s["properties"]["title"] == "Dashboard"), None
-        )
-        if dash_id_early is not None:
-            service_early.spreadsheets().batchUpdate(
-                spreadsheetId=sheets_client._spreadsheet_id,
-                body={"requests": [
-                    {"autoResizeDimensions": {"dimensions": {
-                        "sheetId": dash_id_early, "dimension": "COLUMNS",
-                        "startIndex": 0, "endIndex": 8,
-                    }}},
-                ]},
-            ).execute()
-    except Exception as e:
-        logger.warning("Dashboard auto-resize failed: %s", e)
+        logger.warning("Dashboard formatting failed: %s", e)
 
     # ── 5. Create/refresh charts via Sheets API ───────────────────
     try:
@@ -161,7 +179,6 @@ def refresh_dashboard(sheets_client: Any) -> None:
         service = build("sheets", "v4", credentials=sheets_client._creds)
         spreadsheet_id = sheets_client._spreadsheet_id
 
-        # Get sheet IDs
         meta = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
         sheet_id_map = {s["properties"]["title"]: s["properties"]["sheetId"] for s in meta["sheets"]}
         dashboard_id = sheet_id_map.get("Dashboard")
@@ -169,7 +186,7 @@ def refresh_dashboard(sheets_client: Any) -> None:
             logger.warning("Dashboard sheet ID not found, skipping charts")
             return
 
-        # Delete existing charts on Dashboard
+        # Delete existing charts
         existing_charts = [
             c for s in meta["sheets"]
             if s["properties"]["sheetId"] == dashboard_id
@@ -184,16 +201,10 @@ def refresh_dashboard(sheets_client: Any) -> None:
         n_months = len(month_rows)
 
         add_requests = []
-
-        # Chart 1: Donut — Spending by Category
         if n_cats > 0:
             add_requests.append(_donut_chart(dashboard_id, n_cats))
-
-        # Chart 2: Column — Monthly Expenses
         if n_months > 0:
             add_requests.append(_monthly_expenses_chart(dashboard_id, n_months))
-
-        # Chart 3: Stacked — Income vs Expenses
         if n_months > 0:
             add_requests.append(_income_vs_expenses_chart(dashboard_id, n_months))
 
@@ -205,14 +216,16 @@ def refresh_dashboard(sheets_client: Any) -> None:
             logger.info("Dashboard charts created/updated")
 
     except Exception as e:
-        logger.warning("Could not create charts (googleapiclient missing?): %s", e)
+        logger.warning("Could not create charts: %s", e)
+
+    # ── 6. Sync category conditional colors ───────────────────────────
+    sheets_client.sync_category_colors()
 
 
 # ── Chart builders ────────────────────────────────────────────────
 
 
 def _donut_chart(sheet_id: int, n_rows: int) -> dict[str, Any]:
-    """Donut chart: Spending by Category (col A=labels, col B=values)."""
     return {
         "addChart": {
             "chart": {
@@ -220,23 +233,18 @@ def _donut_chart(sheet_id: int, n_rows: int) -> dict[str, Any]:
                     "title": "Spending by Category",
                     "pieChart": {
                         "legendPosition": "RIGHT_LEGEND",
-                        "pieHole": 0.4,  # donut
-                        "domain": {
-                            "sourceRange": {"sources": [_range(sheet_id, 1, 0, 1 + n_rows, 1)]}
-                        },
-                        "series": {
-                            "sourceRange": {"sources": [_range(sheet_id, 1, 1, 1 + n_rows, 2)]}
-                        },
+                        "pieHole": 0.4,
+                        "domain": {"sourceRange": {"sources": [_range(sheet_id, 1, 0, 1 + n_rows, 1)]}},
+                        "series": {"sourceRange": {"sources": [_range(sheet_id, 1, 1, 1 + n_rows, 2)]}},
                     },
                 },
-                "position": _anchor(sheet_id, row=1, col=8),
+                "position": _anchor(sheet_id, row=1, col=12),
             }
         }
     }
 
 
 def _monthly_expenses_chart(sheet_id: int, n_rows: int) -> dict[str, Any]:
-    """Column chart: Monthly Expenses (col D=month, col F=expenses)."""
     return {
         "addChart": {
             "chart": {
@@ -253,21 +261,18 @@ def _monthly_expenses_chart(sheet_id: int, n_rows: int) -> dict[str, Any]:
                             {"domain": {"sourceRange": {"sources": [_range(sheet_id, 1, 3, 1 + n_rows, 4)]}}}
                         ],
                         "series": [
-                            {
-                                "series": {"sourceRange": {"sources": [_range(sheet_id, 1, 5, 1 + n_rows, 6)]}},
-                                "targetAxis": "LEFT_AXIS",
-                            }
+                            {"series": {"sourceRange": {"sources": [_range(sheet_id, 1, 5, 1 + n_rows, 6)]}},
+                             "targetAxis": "LEFT_AXIS"}
                         ],
                     },
                 },
-                "position": _anchor(sheet_id, row=20, col=8),
+                "position": _anchor(sheet_id, row=20, col=12),
             }
         }
     }
 
 
 def _income_vs_expenses_chart(sheet_id: int, n_rows: int) -> dict[str, Any]:
-    """Stacked column: Income vs Expenses per month."""
     return {
         "addChart": {
             "chart": {
@@ -285,43 +290,31 @@ def _income_vs_expenses_chart(sheet_id: int, n_rows: int) -> dict[str, Any]:
                             {"domain": {"sourceRange": {"sources": [_range(sheet_id, 1, 3, 1 + n_rows, 4)]}}}
                         ],
                         "series": [
-                            {
-                                "series": {"sourceRange": {"sources": [_range(sheet_id, 1, 4, 1 + n_rows, 5)]}},
-                                "targetAxis": "LEFT_AXIS",
-                            },
-                            {
-                                "series": {"sourceRange": {"sources": [_range(sheet_id, 1, 5, 1 + n_rows, 6)]}},
-                                "targetAxis": "LEFT_AXIS",
-                            },
+                            {"series": {"sourceRange": {"sources": [_range(sheet_id, 1, 4, 1 + n_rows, 5)]}},
+                             "targetAxis": "LEFT_AXIS"},
+                            {"series": {"sourceRange": {"sources": [_range(sheet_id, 1, 5, 1 + n_rows, 6)]}},
+                             "targetAxis": "LEFT_AXIS"},
                         ],
                     },
                 },
-                "position": _anchor(sheet_id, row=40, col=8),
+                "position": _anchor(sheet_id, row=40, col=12),
             }
         }
     }
 
 
 def _range(sheet_id: int, r1: int, c1: int, r2: int, c2: int) -> dict[str, Any]:
-    """Build a GridRange dict (1-indexed end, exclusive)."""
     return {
         "sheetId": sheet_id,
-        "startRowIndex": r1,
-        "endRowIndex": r2,
-        "startColumnIndex": c1,
-        "endColumnIndex": c2,
+        "startRowIndex": r1, "endRowIndex": r2,
+        "startColumnIndex": c1, "endColumnIndex": c2,
     }
 
 
 def _anchor(sheet_id: int, row: int, col: int) -> dict[str, Any]:
-    """Overlay position anchored at a cell."""
     return {
         "overlayPosition": {
-            "anchorCell": {
-                "sheetId": sheet_id,
-                "rowIndex": row,
-                "columnIndex": col,
-            },
+            "anchorCell": {"sheetId": sheet_id, "rowIndex": row, "columnIndex": col},
             "widthPixels": 600,
             "heightPixels": 350,
         }

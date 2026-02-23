@@ -22,12 +22,17 @@ _DATE_ALIASES = {
     "data esecuzione", "datum",
 }
 _DESCRIPTION_ALIASES = {
-    "descrizione", "description", "causale", "dettagli",
-    "operazione",  # ISyBank
+    "descrizione", "description", "causale",
+    "operazione",  # ISyBank primary description
     "details", "merchant", "commerciante", "motivo",
     "remittance", "transaction description", "narrative",
     "wording", "reference", "note", "notes", "memo",
     "causale pagamento", "descrizione operazione",
+}
+# Secondary/detail columns — merged into description for AI context
+_DETAIL_ALIASES = {
+    "dettagli",   # ISyBank — contains merchant name buried in a long string
+    "description details", "transaction details", "detail", "additional info",
 }
 _AMOUNT_ALIASES = {
     "importo", "amount", "valore", "value", "ammontare",
@@ -144,6 +149,8 @@ def _map_columns(headers: list[str]) -> dict[str, int]:
             mapping.setdefault("date", i)
         elif h in _DESCRIPTION_ALIASES:
             mapping.setdefault("description", i)
+        elif h in _DETAIL_ALIASES:
+            mapping.setdefault("detail", i)   # secondary detail column
         elif h in _AMOUNT_ALIASES:
             mapping.setdefault("amount", i)
         elif h in _CREDIT_ALIASES:
@@ -152,6 +159,48 @@ def _map_columns(headers: list[str]) -> dict[str, int]:
             mapping.setdefault("debit", i)
 
     return mapping
+
+
+def _clean_description(text: str) -> str:
+    """Remove verbose banking boilerplate and deduplicate substrings."""
+    parts = [p.strip() for p in text.split("|")]
+    cleaned_parts: list[str] = []
+
+    for part in parts:
+        # Strip generic POS boilerplate
+        part = re.sub(r"(?i)\s*\beffettuato(?:\s+il\s+\d{2}[/\.]\d{2}[/\.]\d{4})?\s+(?:alle\s+ore\s+\d{4})?.*?\bpresso\s+", " ", part)
+        part = re.sub(r"(?i)pagamento\s+effettuato\s+su\s+pos\s+estero", "", part)
+        part = re.sub(r"(?i)pagamento\s+su\s+pos", "", part)
+        
+        # Strip verbose wiring
+        part = re.sub(r"(?i)bonifico\s+(?:istantaneo\s+)?da\s+(?:voi\s+)?disposto\s+a\s+favore\s+di\s+", "Bonifico a: ", part)
+        
+        # Strip long alphanumeric trace IDs (like 02INTER...)
+        part = re.sub(r"\b[A-Za-z0-9]{15,}\b", " ", part)
+        
+        # Strip ATM boilerplate
+        part = re.sub(r"(?i)\beffettuato\s+presso\s+ABI\s+\d+.*?\bcarta\s+n\.?\s+\d+\*+\d+", "", part)
+        
+        part = re.sub(r"\s+", " ", part).strip()
+        if part:
+            cleaned_parts.append(part)
+
+    # Deduplicate: if one part completely contains another, keep the longer one
+    new_parts: list[str] = []
+    for part in cleaned_parts:
+        add_it = True
+        for i, existing in enumerate(new_parts):
+            if len(existing) > 5 and existing.lower() in part.lower():
+                new_parts[i] = part
+                add_it = False
+                break
+            if len(part) > 5 and part.lower() in existing.lower():
+                add_it = False
+                break
+        if add_it:
+            new_parts.append(part)
+
+    return " | ".join(new_parts).strip(" |")
 
 
 def parse_csv(
@@ -236,7 +285,15 @@ def parse_csv(
                 continue
 
             date = _parse_date(raw_date)
-            description = row[col["description"]].strip() if "description" in col else ""
+
+            # Primary description + optional detail column (merged for AI context)
+            raw_desc = row[col["description"]].strip() if "description" in col else ""
+            if "detail" in col and col["detail"] < len(row):
+                detail = row[col["detail"]].strip()
+                if detail and detail.lower() != raw_desc.lower():
+                    raw_desc = f"{raw_desc} | {detail}"
+            
+            description = _clean_description(raw_desc)
 
             # Amount: either a single column or split credit/debit
             if "amount" in col:

@@ -95,6 +95,65 @@ def refresh_dashboard(sheets_client: Any) -> None:
         len(sorted_cats), len(sorted_months),
     )
 
+    # ── 4b. Format Dashboard headers ──────────────────────────────
+    # Apply same navy-bold style as Transactions sheet to both header rows
+    try:
+        from googleapiclient.discovery import build  # type: ignore[import-untyped]
+        _svc = build("sheets", "v4", credentials=sheets_client._creds)
+        _meta = _svc.spreadsheets().get(spreadsheetId=sheets_client._spreadsheet_id).execute()
+        _dash_id = next(
+            (s["properties"]["sheetId"] for s in _meta["sheets"]
+             if s["properties"]["title"] == "Dashboard"), None
+        )
+        if _dash_id is not None:
+            _navy = {"red": 0.07, "green": 0.12, "blue": 0.22}
+            _white = {"red": 1.0, "green": 1.0, "blue": 1.0}
+            _header_ranges = [
+                {"sheetId": _dash_id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 2},   # A1:B1
+                {"sheetId": _dash_id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 3, "endColumnIndex": 7},   # D1:G1
+            ]
+            _fmt_requests = [
+                {
+                    "repeatCell": {
+                        "range": r,
+                        "cell": {"userEnteredFormat": {
+                            "backgroundColor": _navy,
+                            "textFormat": {"foregroundColor": _white, "bold": True, "fontSize": 10},
+                        }},
+                        "fields": "userEnteredFormat(backgroundColor,textFormat)",
+                    }
+                }
+                for r in _header_ranges
+            ]
+            _svc.spreadsheets().batchUpdate(
+                spreadsheetId=sheets_client._spreadsheet_id,
+                body={"requests": _fmt_requests},
+            ).execute()
+    except Exception as e:
+        logger.warning("Dashboard header formatting failed: %s", e)
+
+    # ── Auto-resize Dashboard columns ─────────────────────────────
+    try:
+        from googleapiclient.discovery import build  # type: ignore[import-untyped]
+        service_early = build("sheets", "v4", credentials=sheets_client._creds)
+        meta_early = service_early.spreadsheets().get(spreadsheetId=sheets_client._spreadsheet_id).execute()
+        dash_id_early = next(
+            (s["properties"]["sheetId"] for s in meta_early["sheets"]
+             if s["properties"]["title"] == "Dashboard"), None
+        )
+        if dash_id_early is not None:
+            service_early.spreadsheets().batchUpdate(
+                spreadsheetId=sheets_client._spreadsheet_id,
+                body={"requests": [
+                    {"autoResizeDimensions": {"dimensions": {
+                        "sheetId": dash_id_early, "dimension": "COLUMNS",
+                        "startIndex": 0, "endIndex": 8,
+                    }}},
+                ]},
+            ).execute()
+    except Exception as e:
+        logger.warning("Dashboard auto-resize failed: %s", e)
+
     # ── 5. Create/refresh charts via Sheets API ───────────────────
     try:
         from googleapiclient.discovery import build  # type: ignore[import-untyped]
@@ -170,7 +229,7 @@ def _donut_chart(sheet_id: int, n_rows: int) -> dict[str, Any]:
                         },
                     },
                 },
-                "position": _anchor(sheet_id, row=1, col=6),
+                "position": _anchor(sheet_id, row=1, col=8),
             }
         }
     }
@@ -201,7 +260,7 @@ def _monthly_expenses_chart(sheet_id: int, n_rows: int) -> dict[str, Any]:
                         ],
                     },
                 },
-                "position": _anchor(sheet_id, row=20, col=6),
+                "position": _anchor(sheet_id, row=20, col=8),
             }
         }
     }
@@ -237,7 +296,7 @@ def _income_vs_expenses_chart(sheet_id: int, n_rows: int) -> dict[str, Any]:
                         ],
                     },
                 },
-                "position": _anchor(sheet_id, row=40, col=6),
+                "position": _anchor(sheet_id, row=40, col=8),
             }
         }
     }

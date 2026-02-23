@@ -129,7 +129,7 @@ class SheetsClient:
             self._apply_header_formatting()
 
     def _apply_header_formatting(self) -> None:
-        """Bold + colour the header row, freeze it, rename sheet, colour amounts."""
+        """Wipe stale formats, then apply navy bold header + freeze + conditional amounts."""
         try:
             sheet_id = self._sheet.id
             service = self._service()
@@ -141,7 +141,16 @@ class SheetsClient:
                         "fields": "title",
                     }
                 },
-                # Bold + navy background on header row
+                # ── Clear ALL existing cell formatting first ──────────
+                # This prevents stale navy styles bleeding into data rows
+                {
+                    "repeatCell": {
+                        "range": {"sheetId": sheet_id},
+                        "cell": {"userEnteredFormat": {}},
+                        "fields": "userEnteredFormat",
+                    }
+                },
+                # ── Apply navy bold to header row only ────────────────
                 {
                     "repeatCell": {
                         "range": {
@@ -171,17 +180,8 @@ class SheetsClient:
                         "fields": "gridProperties.frozenRowCount",
                     }
                 },
-                # Auto-resize columns A–G
-                {
-                    "autoResizeDimensions": {
-                        "dimensions": {
-                            "sheetId": sheet_id,
-                            "dimension": "COLUMNS",
-                            "startIndex": 0,
-                            "endIndex": 7,
-                        }
-                    }
-                },
+                # Auto-resize columns A–G is called AFTER data is written
+                # (see _auto_resize below — called in append_transactions)
                 # Amount col (E = index 4): green if positive
                 {
                     "addConditionalFormatRule": {
@@ -223,6 +223,27 @@ class SheetsClient:
         except Exception as e:
             logger.warning("Could not apply header formatting: %s", e)
 
+
+    def _auto_resize(self, sheet_id: int, n_cols: int = 7) -> None:
+        """Auto-resize columns to fit content (called after data is written)."""
+        try:
+            service = self._service()
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=self._spreadsheet_id,
+                body={"requests": [{
+                    "autoResizeDimensions": {
+                        "dimensions": {
+                            "sheetId": sheet_id,
+                            "dimension": "COLUMNS",
+                            "startIndex": 0,
+                            "endIndex": n_cols,
+                        }
+                    }
+                }]},
+            ).execute()
+        except Exception as e:
+            logger.warning("Auto-resize failed: %s", e)
+
     def append_transactions(
         self, transactions: list[CategorisedTransaction]
     ) -> int:
@@ -243,4 +264,7 @@ class SheetsClient:
 
         self._sheet.append_rows(rows, value_input_option="USER_ENTERED")
         logger.info("Appended %d row(s) to Google Sheets", len(rows))
+
+        # Resize AFTER data is written so widths fit actual content
+        self._auto_resize(self._sheet.id, n_cols=7)
         return len(rows)

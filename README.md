@@ -23,6 +23,12 @@ Prism takes your raw bank exports (CSV or PDF), sends them through an AI model (
 - **Idempotent** — Maintains a local SQLite database of transaction hashes. Prism never imports the same transaction twice, even if you re-run the same CSV.
 - **Fully Automated (Cron)** — Run it nightly via GitHub Actions. If you add a CSV to the `inbox`, the bot picks it up, updates your Google Sheet, and moves the file to `processed/`.
 
+### Architecture / How it works
+
+<p align="center">
+  <img src="assets/architecture.svg" alt="Prism Pipeline Architecture" width="800" />
+</p>
+
 ### The Google Sheets Dashboard
 
 Prism automatically creates and formats multiple tabs:

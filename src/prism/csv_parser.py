@@ -178,15 +178,30 @@ def _clean_description(text: str) -> str:
         part = re.sub(r"(?i)\s*\beffettuato(?:\s+il\s+\d{2}[/\.]\d{2}[/\.]\d{4})?\s+(?:alle\s+ore\s+\d{4})?.*?\bpresso\s+", " ", part)
         part = re.sub(r"(?i)pagamento\s+effettuato\s+su\s+pos\s+estero", "", part)
         part = re.sub(r"(?i)pagamento\s+su\s+pos", "", part)
+        part = re.sub(r"(?i)^pagamento\s+", "", part)
         
-        # Strip verbose wiring
-        part = re.sub(r"(?i)bonifico\s+(?:istantaneo\s+)?da\s+(?:voi\s+)?disposto\s+a\s+favore\s+di\s+", "Bonifico a: ", part)
+        # Strip verbose wiring (and just leave the recipient name)
+        part = re.sub(r"(?i)^.*?bonifico\s+(?:istantaneo\s+)?da\s+(?:voi\s+)?disposto\s+a\s+favore\s+di\s*", "", part)
+        part = re.sub(r"(?i)^.*?bonifico\s+(?:istantaneo\s+)?a\s+vostro\s+favore\s+disposto\s+da\s*", "", part)
         
+        # Strip credit card masks / PAN (e.g., Carta n.5341 XXXX XXXX XX40, CARTA ... 4321, Carta n. 5341 XXXX XXXX 1234)
+        part = re.sub(r"(?i)\bcarta(?:\s+n\.?)?\s*\d*\*+\d+(?:\s*[A-Z0-9X\*]+)*\b", "", part)
+        part = re.sub(r"(?i)\bcarta(?:\s+n\.?)?\s*(?:\d{4}\s*)+(?:[x\*]{4}\s*)+(?:\d{4}|\w{4})\b", "", part)
+        part = re.sub(r"(?i)\bcarta\s+\d+\*+\d+\b", "", part)
+        part = re.sub(r"(?i)CARTA [A-Z0-9X\*]{10,}", "", part)
+        
+        # Strip banking / ATM codes (sometimes joined like XX40ABI 02008)
+        part = re.sub(r"(?i)\s*ABI\s+\d+\b", " ", part)
+        part = re.sub(r"(?i)CAB\s+\d+\b", " ", part)
+        part = re.sub(r"(?i)ATM\s+\d+\b", " ", part)
+        part = re.sub(r"(?i)\beffettuato\s+presso\b", "", part)
+        part = re.sub(r"(?i)COD\.\s*\d+/?\d*\b", "", part)
+
+        # Strip currency exchange boilerplate e.g. (ctv. Di 1081 Usd Al Cambio Di 0863334)
+        part = re.sub(r"(?i)\(ctv\.\s+di\s+.*?\)", "", part)
+
         # Strip long alphanumeric trace IDs (like 02INTER...)
         part = re.sub(r"\b[A-Za-z0-9]{15,}\b", " ", part)
-        
-        # Strip ATM boilerplate
-        part = re.sub(r"(?i)\beffettuato\s+presso\s+ABI\s+\d+.*?\bcarta\s+n\.?\s+\d+\*+\d+", "", part)
         
         part = re.sub(r"\s+", " ", part).strip()
         if part:

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/icon.png" alt="Prism" width="120" />
+  <img src="assets/icon.png" alt="Prism" width="180" />
 </p>
 
 <h1 align="center">Prism</h1>

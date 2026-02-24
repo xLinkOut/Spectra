@@ -50,6 +50,7 @@ Prism automatically creates and formats multiple tabs:
 
 3. **Configure the `.env` file** (See sections below for getting these keys)
    ```env
+   BASE_CURRENCY=EUR
    AI_PROVIDER=openai
    OPENAI_API_KEY=sk-...
    SPREADSHEET_ID=1Do7APx...

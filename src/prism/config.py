@@ -26,6 +26,16 @@ class Settings(BaseSettings):
     google_sheets_credentials_file: str = "credentials.json"
     spreadsheet_id: str = ""
 
+    # ── Base Currency ────────────────────────────────────────────
+    base_currency: str = Field(default="EUR")
+
+    from pydantic import field_validator
+    
+    @field_validator("base_currency")
+    @classmethod
+    def _uppercase_currency(cls, v: str) -> str:
+        return v.strip().upper()
+
     # ── AI Provider ──────────────────────────────────────────────
     ai_provider: Literal["gemini", "openai"] = "gemini"
 

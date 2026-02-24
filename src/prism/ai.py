@@ -173,6 +173,7 @@ def categorise(
     provider: str,
     api_key: str,
     model: str,
+    base_currency: str = "EUR",
 ) -> list[CategorisedTransaction]:
     """Send transactions to the LLM and return structured results.
 
@@ -233,7 +234,7 @@ def categorise(
                     clean_name=item.get("clean_name", ""),
                     category=item.get("category", "Other"),
                     amount=amount,
-                    currency=item.get("currency", "EUR"),
+                    currency=item.get("currency", base_currency),
                     date=date_str,
                     recurring=_normalize_recurring(item.get("recurring", ""), amount),
                     # These will be filled by the FX converter in the pipeline if needed

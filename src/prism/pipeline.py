@@ -78,6 +78,7 @@ def run(settings: Settings, file: str, currency: str, dry_run: bool) -> None:
         categorised = categorise(
             flat, existing_categories,
             provider=settings.ai_provider, api_key=api_key, model=model,
+            base_currency=settings.base_currency,
         )
 
         if not categorised:
@@ -94,15 +95,15 @@ def run(settings: Settings, file: str, currency: str, dry_run: bool) -> None:
         # ── Step 4c: Currency conversion ─────────────────────────
         from prism.fx import convert_currency
         for t in categorised:
-            if t.currency.upper() != "EUR":
+            if t.currency.upper() != settings.base_currency:
                 original_amt = t.amount
                 original_cur = t.currency.upper()
-                converted = convert_currency(original_amt, original_cur, "EUR", t.date)
+                converted = convert_currency(original_amt, original_cur, settings.base_currency, t.date)
                 
                 t.original_amount = original_amt
                 t.original_currency = original_cur
                 t.amount = converted
-                t.currency = "EUR"
+                t.currency = settings.base_currency
 
         # ── Step 5: Write or print ───────────────────────────────
         if dry_run:
@@ -184,17 +185,19 @@ def main() -> None:
     group.add_argument("--file", "-f", help="Path to a bank CSV or PDF export")
     group.add_argument("--inbox", help="Path to folder with CSV/PDF files (processes all)")
 
-    parser.add_argument("--currency", default="EUR", help="Currency code (default: EUR)")
+    parser.add_argument("--currency", default=None, help="Currency code (default: from .env BASE_CURRENCY)")
     parser.add_argument("--dry-run", action="store_true", help="Print results without writing to Sheets")
 
     args = parser.parse_args()
     settings = load_settings()
 
+    target_currency = args.currency or settings.base_currency
+
     try:
         if args.inbox:
-            run_inbox(settings, inbox_dir=args.inbox, currency=args.currency, dry_run=args.dry_run)
+            run_inbox(settings, inbox_dir=args.inbox, currency=target_currency, dry_run=args.dry_run)
         else:
-            run(settings, file=args.file, currency=args.currency, dry_run=args.dry_run)
+            run(settings, file=args.file, currency=target_currency, dry_run=args.dry_run)
     except Exception:
         logger.exception("❌ Pipeline failed")
         sys.exit(1)

@@ -51,13 +51,19 @@ def run(settings: Settings, file: str, currency: str, dry_run: bool) -> None:
             existing_categories: list[str] = []
             overrides = db.get_overrides()
         else:
+            if not settings.google_sheets_credentials_b64 and not Path(settings.google_sheets_credentials_file).exists():
+                logger.error("❌ Google Sheets credentials missing! Cannot run in production mode.")
+                logger.error("   Please set GOOGLE_SHEETS_CREDENTIALS_B64 or GOOGLE_SHEETS_CREDENTIALS_FILE in .env")
+                logger.error("   Or run with --dry-run to test locally without Google Sheets.")
+                sys.exit(1)
+
             sheets = SheetsClient(
                 spreadsheet_id=settings.spreadsheet_id,
                 credentials_b64=settings.google_sheets_credentials_b64,
                 credentials_file=settings.google_sheets_credentials_file,
             )
             existing_categories = sheets.get_existing_categories()
-            logger.info("Syncing manual overrides from Sheets...")
+            logger.info("🔄 Syncing manual overrides from Sheets...")
             overrides = sheets.fetch_overrides()
             db.save_overrides(overrides)
 
@@ -117,7 +123,7 @@ def run(settings: Settings, file: str, currency: str, dry_run: bool) -> None:
         categorised.extend(pre_categorised)
 
         if not categorised:
-            logger.warning("No transactions were categorised.")
+            logger.warning("⚠️ No transactions were categorised.")
             return
 
         # ── Step 4b: Deterministic recurring detection ────────────
@@ -156,7 +162,7 @@ def run(settings: Settings, file: str, currency: str, dry_run: bool) -> None:
             try:
                 refresh_dashboard(sheets)
             except Exception:
-                logger.warning("Dashboard update failed — continuing", exc_info=True)
+                logger.warning("⚠️ Dashboard update failed — continuing", exc_info=True)
 
 
 def run_inbox(settings: Settings, inbox_dir: str, currency: str, dry_run: bool) -> None:

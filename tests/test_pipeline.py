@@ -12,10 +12,12 @@ from prism.pipeline import run
 
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
+    dummy_creds = tmp_path / "dummy.json"
+    dummy_creds.touch()
     return Settings(
         spreadsheet_id="test-sheet-id",
         google_sheets_credentials_b64="",
-        google_sheets_credentials_file="dummy.json",
+        google_sheets_credentials_file=str(dummy_creds),
         ai_provider="gemini",
         gemini_api_key="test-gemini-key",
         db_path=tmp_path / "test.db",

@@ -108,11 +108,11 @@ class SheetsClient:
         rows = ws.get_all_values()
         year = None
         for row in rows[1:]:
-            if row and row[0].strip():
+            if row and len(row) > 0 and row[0].strip():
                 try:
                     year = int(row[0].strip()[:4])
                     break
-                except ValueError:
+                except (ValueError, IndexError):
                     pass
 
         new_title = _year_title(year) if year else _year_title(2026)

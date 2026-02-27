@@ -8,6 +8,7 @@ import re
 from typing import Any
 
 from pydantic import BaseModel
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger("prism.ai")
 
@@ -166,6 +167,7 @@ def _extract_json(text: str) -> list[dict[str, Any]]:
     return []
 
 
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def categorise(
     transactions: list[dict[str, Any]],
     existing_categories: list[str],

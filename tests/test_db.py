@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from prism.db import BookmarkDB
+from spectra.db import BookmarkDB
 
 
 @pytest.fixture

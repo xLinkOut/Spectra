@@ -13,9 +13,9 @@ from typing import Any
 import gspread
 from google.oauth2.service_account import Credentials
 
-from prism.ai import CategorisedTransaction
+from spectra.ai import CategorisedTransaction
 
-logger = logging.getLogger("prism.sheets")
+logger = logging.getLogger("spectra.sheets")
 
 # Google API scopes needed
 _SCOPES = [

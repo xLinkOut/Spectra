@@ -6,7 +6,7 @@ import logging
 import sqlite3
 from pathlib import Path
 
-logger = logging.getLogger("prism.db")
+logger = logging.getLogger("spectra.db")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS seen_transactions (

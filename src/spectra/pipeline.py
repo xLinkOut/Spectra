@@ -7,21 +7,21 @@ import logging
 import sys
 from pathlib import Path
 
-from prism.ai import CategorisedTransaction, categorise
-from prism.config import Settings, load_settings
-from prism.csv_parser import ParsedTransaction, parse_csv
-from prism.dashboard import refresh_dashboard
-from prism.db import BookmarkDB
-from prism.sheets import SheetsClient
+from spectra.ai import CategorisedTransaction, categorise
+from spectra.config import Settings, load_settings
+from spectra.csv_parser import ParsedTransaction, parse_csv
+from spectra.dashboard import refresh_dashboard
+from spectra.db import BookmarkDB
+from spectra.sheets import SheetsClient
 
-logger = logging.getLogger("prism")
+logger = logging.getLogger("spectra")
 
 
 def _parse_file(file_path: str, currency: str) -> list[ParsedTransaction]:
     """Auto-detect CSV or PDF and parse accordingly."""
     ext = Path(file_path).suffix.lower()
     if ext == ".pdf":
-        from prism.pdf_parser import parse_pdf
+        from spectra.pdf_parser import parse_pdf
         return parse_pdf(file_path, currency=currency)
     else:
         return parse_csv(file_path, currency=currency)
@@ -127,14 +127,14 @@ def run(settings: Settings, file: str, currency: str, dry_run: bool) -> None:
             return
 
         # ── Step 4b: Deterministic recurring detection ────────────
-        from prism.recurring import apply_recurring_tags
+        from spectra.recurring import apply_recurring_tags
         
         # We fetch history from the DB to do temporal matching
         history = db.get_merchant_history()
         apply_recurring_tags(categorised, history)
 
         # ── Step 4c: Currency conversion ─────────────────────────
-        from prism.fx import convert_currency
+        from spectra.fx import convert_currency
         for t in categorised:
             if t.currency.upper() != settings.base_currency:
                 original_amt = t.amount
@@ -148,7 +148,7 @@ def run(settings: Settings, file: str, currency: str, dry_run: bool) -> None:
 
         # ── Step 5: Write or print ───────────────────────────────
         if dry_run:
-            from prism.reporter import generate_html_report
+            from spectra.reporter import generate_html_report
             logger.info("🧪 DRY RUN — writing to HTML report")
             generate_html_report(categorised)
             logger.info("✅ Report generated and opened in browser")
@@ -210,8 +210,8 @@ def run_inbox(settings: Settings, inbox_dir: str, currency: str, dry_run: bool) 
 def main() -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        prog="prism",
-        description="Prism — Bank CSV → AI → Google Sheets",
+        prog="spectra",
+        description="Spectra — Bank CSV → AI → Google Sheets",
     )
 
     group = parser.add_mutually_exclusive_group(required=True)

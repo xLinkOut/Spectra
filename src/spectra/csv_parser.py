@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger("prism.csv_parser")
+logger = logging.getLogger("spectra.csv_parser")
 
 
 # ── Column name mappings ──────────────────────────────────────────

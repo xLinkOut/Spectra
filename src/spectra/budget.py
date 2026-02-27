@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-logger = logging.getLogger("prism.budget")
+logger = logging.getLogger("spectra.budget")
 
 _BUDGET_SHEET = "Budget"
 _HEADER = ["Category", "Monthly Budget (€)"]
@@ -42,7 +42,7 @@ def read_budgets(sheets_client: Any) -> dict[str, float]:
 def sync_budget_sheet(sheets_client: Any, categories: list[str]) -> None:
     """Create the Budget tab if missing, and add any new categories with 0 budget.
 
-    The user fills in the actual numbers — Prism never overwrites existing values.
+    The user fills in the actual numbers — Spectra never overwrites existing values.
     """
     try:
         ws = sheets_client._spreadsheet.worksheet(_BUDGET_SHEET)

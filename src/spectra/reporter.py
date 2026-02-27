@@ -7,7 +7,7 @@ import webbrowser
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger("prism.reporter")
+logger = logging.getLogger("spectra.reporter")
 
 def generate_html_report(transactions: list[Any], output_dir: str | Path = "data") -> Path:
     """Generate an HTML report for dry-run transactions and open it in the browser."""
@@ -55,7 +55,7 @@ def generate_html_report(transactions: list[Any], output_dir: str | Path = "data
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Prism — Dry Run Report</title>
+        <title>Spectra — Dry Run Report</title>
         <style>
             :root {{
                 --bg: #111827;
@@ -149,7 +149,7 @@ def generate_html_report(transactions: list[Any], output_dir: str | Path = "data
     <body>
         <div class="container">
             <header>
-                <h1>Prism Dry-Run Report</h1>
+                <h1>Spectra Dry-Run Report</h1>
                 <div class="badge">{len(transactions)} Transactions</div>
             </header>
             

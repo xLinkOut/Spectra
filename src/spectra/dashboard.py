@@ -7,7 +7,7 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any
 
-logger = logging.getLogger("prism.dashboard")
+logger = logging.getLogger("spectra.dashboard")
 
 
 def refresh_dashboard(sheets_client: Any) -> None:
@@ -124,7 +124,7 @@ def refresh_dashboard(sheets_client: Any) -> None:
         ws.update("I1", recur_header + recur_rows)
 
     # Table D: Budget Status (L1)
-    from prism.budget import read_budgets, sync_budget_sheet, compute_budget_status
+    from spectra.budget import read_budgets, sync_budget_sheet, compute_budget_status
     sync_budget_sheet(sheets_client, [cat for cat, _ in sorted_cats])
     budgets = read_budgets(sheets_client)
     budget_status = compute_budget_status(dict(sorted_cats), budgets)
@@ -263,7 +263,7 @@ def refresh_dashboard(sheets_client: Any) -> None:
 
     # ── 7. Refresh YoY Trends tab ─────────────────────────────────────
     try:
-        from prism.trends import refresh_trends
+        from spectra.trends import refresh_trends
         refresh_trends(sheets_client)
     except Exception as e:
         logger.warning("Trends tab update failed: %s", e)

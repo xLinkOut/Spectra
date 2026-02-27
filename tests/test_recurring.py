@@ -1,7 +1,7 @@
 import sys
 from unittest.mock import MagicMock
 
-from prism.recurring import apply_recurring_tags
+from spectra.recurring import apply_recurring_tags
 
 
 class MockTransaction:

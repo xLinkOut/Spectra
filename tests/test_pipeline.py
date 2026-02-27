@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from prism.config import Settings
-from prism.pipeline import run
+from spectra.config import Settings
+from spectra.pipeline import run
 
 
 @pytest.fixture
@@ -38,8 +38,8 @@ def csv_file(tmp_path: Path) -> str:
 
 class TestPipelineIntegration:
 
-    @patch("prism.pipeline.SheetsClient")
-    @patch("prism.pipeline.categorise")
+    @patch("spectra.pipeline.SheetsClient")
+    @patch("spectra.pipeline.categorise")
     def test_full_flow(
         self,
         mock_categorise: MagicMock,
@@ -47,7 +47,7 @@ class TestPipelineIntegration:
         settings: Settings,
         csv_file: str,
     ) -> None:
-        from prism.ai import CategorisedTransaction
+        from spectra.ai import CategorisedTransaction
 
         mock_sheets = mock_sheets_cls.return_value
         mock_sheets.get_existing_categories.return_value = ["Bar & Caffè"]
@@ -80,8 +80,8 @@ class TestPipelineIntegration:
         mock_categorise.assert_called_once()
         mock_sheets.append_transactions.assert_called_once()
 
-    @patch("prism.pipeline.SheetsClient")
-    @patch("prism.pipeline.categorise")
+    @patch("spectra.pipeline.SheetsClient")
+    @patch("spectra.pipeline.categorise")
     def test_dry_run_skips_sheets(
         self,
         mock_categorise: MagicMock,
@@ -89,7 +89,7 @@ class TestPipelineIntegration:
         settings: Settings,
         csv_file: str,
     ) -> None:
-        from prism.ai import CategorisedTransaction
+        from spectra.ai import CategorisedTransaction
 
         mock_categorise.return_value = [
             CategorisedTransaction(
@@ -110,14 +110,14 @@ class TestPipelineIntegration:
 
     def test_no_duplicate_imports(self, settings: Settings, csv_file: str) -> None:
         """Second import should skip already-seen transactions."""
-        from prism.db import BookmarkDB
-        from prism.csv_parser import parse_csv
+        from spectra.db import BookmarkDB
+        from spectra.csv_parser import parse_csv
 
         txns = parse_csv(csv_file)
         with BookmarkDB(settings.db_path) as db:
             db.mark_seen_batch([t.id for t in txns])
 
         # Now run — should detect all as seen and exit early
-        with patch("prism.pipeline.categorise") as mock_cat:
+        with patch("spectra.pipeline.categorise") as mock_cat:
             run(settings, file=csv_file, currency="EUR", dry_run=True)
             mock_cat.assert_not_called()  # AI never called

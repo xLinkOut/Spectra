@@ -5,7 +5,7 @@ from textwrap import dedent
 
 import pytest
 
-from prism.csv_parser import ParsedTransaction, parse_csv, _parse_amount, _parse_date
+from spectra.csv_parser import ParsedTransaction, parse_csv, _parse_amount, _parse_date
 
 
 class TestParseAmount:

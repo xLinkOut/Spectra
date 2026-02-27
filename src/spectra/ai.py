@@ -10,7 +10,7 @@ from typing import Any
 from pydantic import BaseModel
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-logger = logging.getLogger("prism.ai")
+logger = logging.getLogger("spectra.ai")
 
 
 # ── Data models ──────────────────────────────────────────────────

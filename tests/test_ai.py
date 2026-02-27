@@ -1,6 +1,6 @@
 """Tests for the AI categoriser — prompt building and JSON parsing."""
 
-from prism.ai import (
+from spectra.ai import (
     CategorisedTransaction,
     _build_user_prompt,
     _extract_json,

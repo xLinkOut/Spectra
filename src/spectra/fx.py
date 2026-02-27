@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-logger = logging.getLogger("prism.fx")
+logger = logging.getLogger("spectra.fx")
 
 # Memory cache to avoid hitting the API multiple times for the same date/currency
 _RATES_CACHE: dict[tuple[str, str], float] = {}

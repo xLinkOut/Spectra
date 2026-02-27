@@ -6,7 +6,7 @@ import logging
 import re
 from pathlib import Path
 
-from prism.csv_parser import (
+from spectra.csv_parser import (
     ParsedTransaction,
     _detect_delimiter,
     _make_id,
@@ -15,7 +15,7 @@ from prism.csv_parser import (
     _parse_date,
 )
 
-logger = logging.getLogger("prism.pdf_parser")
+logger = logging.getLogger("spectra.pdf_parser")
 
 
 def parse_pdf(

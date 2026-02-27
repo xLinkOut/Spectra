@@ -6,7 +6,7 @@ import logging
 from collections import defaultdict
 from typing import Any
 
-logger = logging.getLogger("prism.trends")
+logger = logging.getLogger("spectra.trends")
 
 _TRENDS_SHEET = "Trends"
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",

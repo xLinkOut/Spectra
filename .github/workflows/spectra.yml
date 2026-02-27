@@ -1,4 +1,4 @@
-name: Prism – CSV → AI → Sheets
+name: Spectra – CSV → AI → Sheets
 
 on:
   # Every night at 22:00 CET (21:00 UTC)
@@ -32,28 +32,28 @@ jobs:
       - name: Download DB artifact
         uses: actions/download-artifact@v4
         with:
-          name: prism-db
+          name: spectra-db
           path: data/
         continue-on-error: true  # First run won't have an artifact
 
-      - name: Run Prism
+      - name: Run Spectra
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           GOOGLE_SHEETS_CREDENTIALS_B64: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS_B64 }}
-        run: python -m prism --inbox inbox/
+        run: python -m spectra --inbox inbox/
 
       - name: Upload DB artifact
         uses: actions/upload-artifact@v4
         with:
-          name: prism-db
-          path: data/prism.db
+          name: spectra-db
+          path: data/spectra.db
           overwrite: true
 
       - name: Commit processed files
         run: |
-          git config user.name "Prism Bot"
-          git config user.email "prism-bot@users.noreply.github.com"
+          git config user.name "Spectra Bot"
+          git config user.email "spectra-bot@users.noreply.github.com"
           git add inbox/ processed/
-          git diff --staged --quiet || git commit -m "📦 Prism: move processed CSVs"
+          git diff --staged --quiet || git commit -m "📦 Spectra: move processed CSVs"
           git push

@@ -9,11 +9,11 @@ from typing import Literal
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-logger = logging.getLogger("prism")
+logger = logging.getLogger("spectra")
 
 
 class Settings(BaseSettings):
-    """All Prism settings, loaded from environment or .env file."""
+    """All Spectra settings, loaded from environment or .env file."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"
 
     # ── Database ─────────────────────────────────────────────────
-    db_path: Path = Field(default=Path("data/prism.db"))
+    db_path: Path = Field(default=Path("data/spectra.db"))
 
     # ── Behaviour ────────────────────────────────────────────────
     log_level: str = "INFO"
@@ -90,5 +90,5 @@ def load_settings() -> Settings:
         datefmt="%H:%M:%S",
     )
 
-    logger.info("Prism config loaded (provider=%s)", settings.ai_provider)
+    logger.info("Spectra config loaded (provider=%s)", settings.ai_provider)
     return settings

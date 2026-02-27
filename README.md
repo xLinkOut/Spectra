@@ -4,7 +4,7 @@
 
 <h1 align="center">Spectra</h1>
 <p align="center">
-  <strong>Bank CSV/PDF → AI categorization → Google Sheets</strong><br>
+  <strong>Bank CSV/PDF to AI categorization to Google Sheets</strong><br>
   Your personal finance dashboard, fully automated.
 </p>
 
@@ -28,18 +28,18 @@ Spectra takes your raw bank exports (CSV or PDF), sends them through an AI model
 
 Most personal finance tools require direct access to your bank account or lock your data inside proprietary platforms.
 
-Spectra takes a different approach: it works directly from standard bank exports (CSV or PDF), keeps everything transparent, and builds your dashboard in Google Sheets — a format you fully control and can extend yourself.
+Spectra takes a different approach: it works directly from standard bank exports (CSV or PDF), keeps everything transparent, and builds your dashboard in Google Sheets: a format you fully control and can extend yourself.
 
 ### Core Features
 
-- **Universal Import** — Auto-detects custom delimiters, edge-case bank layouts, Italian/European number formats (`1.234,56`), and multi-line descriptions from CSVs and PDFs. Drop a file in the `inbox/` folder and Spectra handles the rest.
-- **AI Categorization** — Cleans obscure bank transfer descriptions into readable merchant names and accurately categorizes them using LLMs, distinguishing between Expenses (Shopping, Food, Transport) and Income (Salary, Transfers In).
-- **Multi-Currency (FX Rates)** — If your bank export contains foreign currencies (USD, GBP, etc.), Spectra automatically calls the free [Frankfurter API](https://www.frankfurter.app/) to fetch the exact historical ECB exchange rate for that day, converting everything to EUR to keep your budgets and trends perfectly aligned. (Requires **zero API keys**).
-- **Hybrid Recurring Detection** — Uses pattern-matching algorithms as a first pass, then falls back to analyzing historical dates in your local database. If an unknown transaction happens roughly ~30 days after an identical one, it is automatically flagged as a Subscription/Salary without relying on LLM guesses.
-- **Smart Overrides (Feedback Loop)** — Spectra learns your habits. If the AI hallucinates a name or category, correct it directly in the new `Override` columns inside your Google Sheet. Spectra pulls these overrides on the next run, applying them instantly locally to save API tokens and time.
-- **Idempotent** — Maintains a local SQLite database of transaction hashes. Spectra never imports the same transaction twice, even if you re-run the same CSV.
-- **Fully Automated (Cron)** — Run it nightly via GitHub Actions. If you add a CSV to the `inbox`, the bot picks it up, updates your Google Sheet, and moves the file to `processed/`.
-- **HTML Dry-Run Reporter** — Running `--dry-run` generates a beautiful offline HTML report mimicking a banking interface that opens in your browser, allowing you to review all AI categorizations before committing them to Sheets.
+- **Universal Import**: Auto-detects custom delimiters, edge-case bank layouts, Italian/European number formats (`1.234,56`), and multi-line descriptions from CSVs and PDFs. Drop a file in the `inbox/` folder and Spectra handles the rest.
+- **AI Categorization**: Cleans obscure bank transfer descriptions into readable merchant names and accurately categorizes them using LLMs, distinguishing between Expenses (Shopping, Food, Transport) and Income (Salary, Transfers In).
+- **Multi-Currency (FX Rates)**: If your bank export contains foreign currencies (USD, GBP, etc.), Spectra automatically calls the free [Frankfurter API](https://www.frankfurter.app/) to fetch the exact historical ECB exchange rate for that day, converting everything to EUR to keep your budgets and trends perfectly aligned. (Requires **zero API keys**).
+- **Hybrid Recurring Detection**: Uses pattern-matching algorithms as a first pass, then falls back to analyzing historical dates in your local database. If an unknown transaction happens roughly ~30 days after an identical one, it is automatically flagged as a Subscription/Salary without relying on LLM guesses.
+- **Smart Overrides (Feedback Loop)**: Spectra learns your habits. If the AI hallucinates a name or category, correct it directly in the new `Override` columns inside your Google Sheet. Spectra pulls these overrides on the next run, applying them instantly locally to save API tokens and time.
+- **Idempotent**: Maintains a local SQLite database of transaction hashes. Spectra never imports the same transaction twice, even if you re-run the same CSV.
+- **Fully Automated (Cron)**: Run it nightly via GitHub Actions. If you add a CSV to the `inbox`, the bot picks it up, updates your Google Sheet, and moves the file to `processed/`.
+- **HTML Dry-Run Reporter**: Running `--dry-run` generates a beautiful offline HTML report mimicking a banking interface that opens in your browser, allowing you to review all AI categorizations before committing them to Sheets.
 
 ### Architecture / How it works
 
@@ -142,7 +142,7 @@ Spectra includes a workflow (`.github/workflows/spectra.yml`) that runs every ni
 
 ### Setup GitHub Secrets
 
-Go to your GitHub Repository homepage → **Settings → Secrets and variables → Actions**. Add the following **Repository Secrets**:
+Go to your GitHub Repository homepage to **Settings to Secrets and variables to Actions**. Add the following **Repository Secrets**:
 
 1. **`OPENAI_API_KEY`** or **`GEMINI_API_KEY`**: Your chosen AI key.
 2. **`SPREADSHEET_ID`**: Your Google Sheet ID.

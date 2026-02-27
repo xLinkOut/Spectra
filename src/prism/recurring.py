@@ -62,12 +62,12 @@ _INCOME_PATTERNS = [
 ]
 
 
-def detect_recurring(
+def _detect_static_pattern(
     clean_name: str,
     original_description: str,
     amount: float,
 ) -> str:
-    """Return 'Subscription', 'Salary/Income', or '' based on pattern matching."""
+    """Return 'Subscription', 'Salary/Income', or '' based purely on hardcoded pattern matching."""
     combined = f"{clean_name} {original_description}".lower()
 
     # ── Subscriptions: long merchant names (substring match) ──────
@@ -87,3 +87,65 @@ def detect_recurring(
                 return "Salary/Income"
 
     return ""
+
+
+def apply_recurring_tags(
+    transactions: list[Any],
+    history: dict[str, list[tuple[str, float]]],
+) -> None:
+    """Apply recurring tags in-place by mixing static patterns and historical temporal matching."""
+    from datetime import datetime
+
+    for t in transactions:
+        # 1. Try static pattern matching first (fastest and most accurate for known entities)
+        static_match = _detect_static_pattern(t.clean_name, t.original_description, t.amount)
+        if static_match:
+            t.recurring = static_match
+            # Add to running history so subsequent items in the loop see it
+            history.setdefault(t.clean_name, []).append((t.date, t.amount))
+            continue
+            
+        # 2. Hybrid Temporal Matching (only for uncategorized)
+        if not t.recurring:
+            # Get historical entries for this specific merchant
+            past_entries = history.get(t.clean_name, [])
+            
+            # If we don't have past entries, maybe we saw it earlier in this SAME batch
+            # We add it to history now for FUTURE transactions in this loop to find
+            
+            if past_entries:
+                try:
+                    current_date = datetime.strptime(t.date, "%Y-%m-%d").date()
+                    
+                    matched = False
+                    for p_date_str, p_amount in past_entries:
+                        # Skip if it's the exact same transaction/date
+                        if p_date_str == t.date:
+                            continue
+                            
+                        # Tolerance: amount must be within 15% (prices change, FX rates change)
+                        if abs(t.amount - p_amount) <= max(3.0, abs(p_amount * 0.15)):
+                            p_date = datetime.strptime(p_date_str, "%Y-%m-%d").date()
+                            days_diff = abs((current_date - p_date).days)
+                            
+                            # Standard billing cycles
+                            # Weekly: ~7 days
+                            # Monthly: 28-31 days
+                            # Yearly: 360-370 days
+                            
+                            if (6 <= days_diff <= 8) or (27 <= days_diff <= 32) or (355 <= days_diff <= 370):
+                                t.recurring = "Salary/Income" if t.amount > 0 else "Subscription"
+                                matched = True
+                                break
+                    
+                    if matched:
+                        # Add to running history
+                        history.setdefault(t.clean_name, []).append((t.date, t.amount))
+                        continue
+                        
+                except Exception:
+                    # Ignore parsing errors and just fall back to no tag
+                    pass
+            
+            # Record it for the future items in this batch
+            history.setdefault(t.clean_name, []).append((t.date, t.amount))

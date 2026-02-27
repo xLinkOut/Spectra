@@ -14,6 +14,19 @@ CREATE TABLE IF NOT EXISTS seen_transactions (
     source      TEXT NOT NULL,          -- e.g. "CSV"
     seen_at     TEXT NOT NULL           -- ISO-8601 UTC timestamp
 );
+
+CREATE TABLE IF NOT EXISTS tx_history (
+    tx_id       TEXT PRIMARY KEY,
+    date        TEXT NOT NULL,
+    clean_name  TEXT NOT NULL,
+    amount      REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS user_overrides (
+    original_description TEXT PRIMARY KEY,
+    category             TEXT NOT NULL,
+    clean_name           TEXT NOT NULL
+);
 """
 
 
@@ -63,6 +76,71 @@ class BookmarkDB:
             [(tx_id, source, now) for tx_id in tx_ids],
         )
         self._conn.commit()
+
+    # ── History tracking for Recurring Detection ─────────────────
+    
+    def save_history(self, transactions: list[Any]) -> None:
+        """Save a batch of parsed and ML-categorised transactions to history."""
+        self._conn.executemany(
+            """
+            INSERT OR IGNORE INTO tx_history (tx_id, date, clean_name, amount)
+            VALUES (?, ?, ?, ?)
+            """,
+            [(t.id, t.date, t.clean_name, t.amount) for t in transactions],
+        )
+        # Also mark them as seen
+        self.mark_seen_batch([t.id for t in transactions])
+        
+    def get_merchant_history(self) -> dict[str, list[tuple[str, float]]]:
+        """Fetch all historical transactions grouped by merchant clean_name."""
+        rows = self._conn.execute(
+            """
+            SELECT clean_name, date, amount
+            FROM tx_history
+            ORDER BY clean_name, date ASC
+            """
+        ).fetchall()
+        
+        history: dict[str, list[tuple[str, float]]] = {}
+        for clean_name, date, amount in rows:
+            history.setdefault(clean_name, []).append((date, amount))
+            
+        return history
+
+    # ── LLM Feedback Overrides ───────────────────────────────────
+
+    def save_overrides(self, overrides: dict[str, dict[str, str]]) -> None:
+        """Save a dictionary of user-defined overrides (original_description -> {category, clean_name})."""
+        if not overrides:
+            return
+            
+        rows_to_insert = [
+            (orig_desc, data.get("category", ""), data.get("clean_name", ""))
+            for orig_desc, data in overrides.items()
+        ]
+        
+        self._conn.executemany(
+            """
+            INSERT OR REPLACE INTO user_overrides (original_description, category, clean_name)
+            VALUES (?, ?, ?)
+            """,
+            rows_to_insert,
+        )
+        self._conn.commit()
+
+    def get_overrides(self) -> dict[str, dict[str, str]]:
+        """Fetch all manual overrides applied by the user in Google Sheets."""
+        rows = self._conn.execute(
+            """
+            SELECT original_description, category, clean_name
+            FROM user_overrides
+            """
+        ).fetchall()
+        
+        return {
+            orig_desc: {"category": cat, "clean_name": name}
+            for orig_desc, cat, name in rows
+        }
 
     def count(self) -> int:
         """Return total number of seen transactions."""

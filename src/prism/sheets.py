@@ -34,6 +34,8 @@ _HEADER = [
     "Recurring",
     "Original Amt",
     "Original Cur",
+    "Override Name",
+    "Override Category",
 ]
 
 # Header styling — deep navy
@@ -177,6 +179,66 @@ class SheetsClient:
             all_rows.extend(rows[1:])   # Data from every year sheet
 
         return all_rows
+
+    def fetch_overrides(self) -> dict[str, dict[str, str]]:
+        """Scan all transaction sheets locally and return user-defined overrides.
+        
+        Returns:
+            Dict mapping Original Description -> {clean_name: str, category: str}
+        """
+        overrides: dict[str, dict[str, str]] = {}
+        
+        for ws in self._spreadsheet.worksheets():
+            if not _is_transaction_sheet(ws.title):
+                continue
+                
+            all_values = ws.get_all_values()
+            if not all_values:
+                continue
+                
+            header = [h.strip() for h in all_values[0]]
+            
+            try:
+                orig_desc_idx = header.index("Original Description")
+                cat_idx = header.index("Category")
+                clean_name_idx = header.index("Merchant")
+            except ValueError:
+                # Missing essential base columns, skip sheet
+                continue
+                
+            # Find override columns (may not exist in legacy sheets until touched)
+            override_name_idx = header.index("Override Name") if "Override Name" in header else -1
+            override_cat_idx = header.index("Override Category") if "Override Category" in header else -1
+            
+            if override_name_idx == -1 and override_cat_idx == -1:
+                continue  # No override columns exist in this sheet
+                
+            for row in all_values[1:]:
+                # Ensure row is long enough
+                max_idx = max(orig_desc_idx, cat_idx, clean_name_idx, override_name_idx, override_cat_idx)
+                if len(row) <= max_idx:
+                    continue
+                    
+                orig_desc = row[orig_desc_idx].strip()
+                if not orig_desc:
+                    continue
+                    
+                # Did the user type into either override column?
+                over_name = row[override_name_idx].strip() if override_name_idx != -1 else ""
+                over_cat = row[override_cat_idx].strip() if override_cat_idx != -1 else ""
+                
+                if over_name or over_cat:
+                    # For anything not overridden, fall back to the existing value in the row
+                    final_name = over_name if over_name else row[clean_name_idx].strip()
+                    final_cat = over_cat if over_cat else row[cat_idx].strip()
+                    
+                    overrides[orig_desc] = {
+                        "clean_name": final_name,
+                        "category": final_cat,
+                    }
+
+        logger.info("Fetched %d manual override(s) from Sheets", len(overrides))
+        return overrides
 
     # ── Write ────────────────────────────────────────────────────
 

@@ -40,6 +40,35 @@ class TestSeenTransactions:
         assert db.count() == 3
 
 
+class TestOverrides:
+    """LLM Feedback Loop override tests."""
+    
+    def test_save_and_get_overrides(self, db: BookmarkDB) -> None:
+        overrides = {
+            "AMZ AWS EMEA": {"clean_name": "AWS", "category": "Cloud Computing"},
+            "UBER TRIP SAN FRAN": {"clean_name": "Uber", "category": "Transport"},
+        }
+        
+        db.save_overrides(overrides)
+        fetched = db.get_overrides()
+        
+        assert len(fetched) == 2
+        assert "AMZ AWS EMEA" in fetched
+        assert fetched["AMZ AWS EMEA"]["clean_name"] == "AWS"
+        assert fetched["UBER TRIP SAN FRAN"]["category"] == "Transport"
+        
+    def test_save_overrides_upsert(self, db: BookmarkDB) -> None:
+        db.save_overrides({"MCDONALDS STR": {"clean_name": "McDonalds", "category": "Food"}})
+        assert db.get_overrides()["MCDONALDS STR"]["category"] == "Food"
+        
+        # Upsert should overwrite old category
+        db.save_overrides({"MCDONALDS STR": {"clean_name": "McDonalds", "category": "Fast Food"}})
+        fetched = db.get_overrides()
+        
+        assert len(fetched) == 1
+        assert fetched["MCDONALDS STR"]["category"] == "Fast Food"
+
+
 class TestContextManager:
     def test_context_manager(self, tmp_path: Path) -> None:
         with BookmarkDB(tmp_path / "ctx.db") as db:

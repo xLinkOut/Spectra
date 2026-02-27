@@ -53,6 +53,7 @@ class TestPipelineIntegration:
 
         mock_categorise.return_value = [
             CategorisedTransaction(
+                id="1",
                 original_description="POS STARBUCKS",
                 clean_name="Starbucks",
                 category="Bar & Caffè",
@@ -61,6 +62,7 @@ class TestPipelineIntegration:
                 date="2026-02-22",
             ),
             CategorisedTransaction(
+                id="2",
                 original_description="ADDEBITO SDD NETFLIX.COM",
                 clean_name="Netflix",
                 category="Abbonamenti",
@@ -89,6 +91,7 @@ class TestPipelineIntegration:
 
         mock_categorise.return_value = [
             CategorisedTransaction(
+                id="1",
                 original_description="POS STARBUCKS",
                 clean_name="Starbucks",
                 category="Bar & Caffè",

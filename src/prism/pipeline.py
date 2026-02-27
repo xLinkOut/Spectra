@@ -46,9 +46,10 @@ def run(settings: Settings, file: str, currency: str, dry_run: bool) -> None:
             logger.info("✅ All transactions already imported — nothing to do")
             return
 
-        # ── Step 3: Read existing categories from Sheet ──────────
+        # ── Step 3: Read existing categories and Overrides ───────
         if dry_run:
             existing_categories: list[str] = []
+            overrides = db.get_overrides()
         else:
             sheets = SheetsClient(
                 spreadsheet_id=settings.spreadsheet_id,
@@ -56,41 +57,75 @@ def run(settings: Settings, file: str, currency: str, dry_run: bool) -> None:
                 credentials_file=settings.google_sheets_credentials_file,
             )
             existing_categories = sheets.get_existing_categories()
+            logger.info("Syncing manual overrides from Sheets...")
+            overrides = sheets.fetch_overrides()
+            db.save_overrides(overrides)
 
         logger.info("📂 Existing categories: %s", existing_categories or "(none)")
 
-        # ── Step 4: Categorise via LLM ───────────────────────────
-        flat = [
-            {
-                "raw_description": t.raw_description,
-                "amount": t.amount,
-                "currency": t.currency,
-                "date": t.date,
-            }
-            for t in new_txns
-        ]
+        # ── Step 3b: Local Override Matching (skip LLM if mapped) ────
+        to_llm = []
+        pre_categorised: list[CategorisedTransaction] = []
+        
+        for t in new_txns:
+            # ParsedTransaction (from csv/pdf) uses raw_description
+            od = t.raw_description
+            if od in overrides:
+                # We have a manual classification for this exact description
+                pre_categorised.append(
+                    CategorisedTransaction(
+                        id=t.id,
+                        original_description=od,
+                        clean_name=overrides[od]["clean_name"],
+                        category=overrides[od]["category"],
+                        amount=t.amount,
+                        currency=t.currency,
+                        date=t.date,
+                    )
+                )
+            else:
+                to_llm.append(t)
+                
+        if pre_categorised:
+            logger.info("Applied overrides to %d transaction(s) locally", len(pre_categorised))
 
-        if settings.ai_provider == "gemini":
-            api_key, model = settings.gemini_api_key, settings.gemini_model
-        else:
-            api_key, model = settings.openai_api_key, settings.openai_model
+        # ── Step 4: AI Matching (only for unknown txns) ─────────────
+        categorised = []
+        if to_llm:
+            flat = [
+                {"raw_description": t.raw_description, "amount": t.amount, "currency": t.currency, "date": t.date}
+                for t in to_llm
+            ]
 
-        categorised = categorise(
-            flat, existing_categories,
-            provider=settings.ai_provider, api_key=api_key, model=model,
-            base_currency=settings.base_currency,
-        )
+            if settings.ai_provider == "gemini":
+                api_key, model = settings.gemini_api_key, settings.gemini_model
+            else:
+                api_key, model = settings.openai_api_key, settings.openai_model
+
+            llm_results = categorise(
+                flat, existing_categories,
+                provider=settings.ai_provider, api_key=api_key, model=model,
+                base_currency=settings.base_currency,
+            )
+            
+            if not llm_results:
+                logger.warning("⚠️  LLM returned no results for %d transactions", len(to_llm))
+            else:
+                categorised.extend(llm_results)
+                
+        # Merge pre-categorised (overrides) and LLM-categorised
+        categorised.extend(pre_categorised)
 
         if not categorised:
-            logger.warning("⚠️  LLM returned no results")
+            logger.warning("No transactions were categorised.")
             return
 
         # ── Step 4b: Deterministic recurring detection ────────────
-        from prism.recurring import detect_recurring
-        for t in categorised:
-            label = detect_recurring(t.clean_name, t.original_description, t.amount)
-            if label:
-                t.recurring = label
+        from prism.recurring import apply_recurring_tags
+        
+        # We fetch history from the DB to do temporal matching
+        history = db.get_merchant_history()
+        apply_recurring_tags(categorised, history)
 
         # ── Step 4c: Currency conversion ─────────────────────────
         from prism.fx import convert_currency
@@ -107,22 +142,14 @@ def run(settings: Settings, file: str, currency: str, dry_run: bool) -> None:
 
         # ── Step 5: Write or print ───────────────────────────────
         if dry_run:
-            print(f"\n{'='*72}")
-            print(f" PRISM — {len(categorised)} categorised transactions")
-            print(f"{'='*72}")
-            for t in categorised:
-                sign = "+" if t.amount > 0 else ""
-                tag = f" [{t.recurring}]" if t.recurring else ""
-                fx_str = f" (was {t.original_amount:.2f} {t.original_currency})" if t.original_amount is not None else ""
-                print(f"\n  {t.date}  {sign}{t.amount:.2f} {t.currency}{tag}{fx_str}")
-                print(f"  Original : {t.original_description}")
-                print(f"  Clean    : {t.clean_name}")
-                print(f"  Category : {t.category}")
-            print(f"\n{'='*72}\n")
-            logger.info("🧪 DRY RUN — nothing written")
+            from prism.reporter import generate_html_report
+            logger.info("🧪 DRY RUN — writing to HTML report")
+            generate_html_report(categorised)
+            logger.info("✅ Report generated and opened in browser")
         else:
             sheets.append_transactions(categorised)
-            db.mark_seen_batch([t.id for t in new_txns])
+            # Save history (date, amount, clean_name) for future temporal recurring detection
+            db.save_history(categorised)
             logger.info("✅ Done — %d rows written to Google Sheets", len(categorised))
 
             # Refresh the Dashboard tab with updated charts

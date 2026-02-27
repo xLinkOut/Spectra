@@ -8,20 +8,36 @@
   Your personal finance dashboard, fully automated.
 </p>
 
+![Python](https://img.shields.io/badge/python-3.10+-blue)
+![License](https://img.shields.io/badge/license-CC--BY--NC--4.0-lightgrey)
+![Status](https://img.shields.io/badge/status-active-success)
+
+<p align="center">
+  <img src="assets/dashboard.png" alt="Prism Dashboard" width="1000" />
+</p>
+
 ---
 
 ## What is Prism?
 
 Prism takes your raw bank exports (CSV or PDF), sends them through an AI model (OpenAI or Gemini) to categorize every transaction, and builds a comprehensive, multi-tab financial dashboard on Google Sheets.
 
+## Why Prism exists
+
+Most personal finance tools require direct access to your bank account or lock your data inside proprietary platforms.
+
+Prism takes a different approach: it works directly from standard bank exports (CSV or PDF), keeps everything transparent, and builds your dashboard in Google Sheets — a format you fully control and can extend yourself.
+
 ### Core Features
 
 - **Universal Import** — Auto-detects custom delimiters, edge-case bank layouts, Italian/European number formats (`1.234,56`), and multi-line descriptions from CSVs and PDFs. Drop a file in the `inbox/` folder and Prism handles the rest.
 - **AI Categorization** — Cleans obscure bank transfer descriptions into readable merchant names and accurately categorizes them using LLMs, distinguishing between Expenses (Shopping, Food, Transport) and Income (Salary, Transfers In).
 - **Multi-Currency (FX Rates)** — If your bank export contains foreign currencies (USD, GBP, etc.), Prism automatically calls the free [Frankfurter API](https://www.frankfurter.app/) to fetch the exact historical ECB exchange rate for that day, converting everything to EUR to keep your budgets and trends perfectly aligned. (Requires **zero API keys**).
-- **Deterministic Subscriptions** — Uses pattern-matching algorithms to reliably tag recurring subscriptions (Netflix, Amazon, Gym) and recurring income without relying on LLM guesses.
+- **Hybrid Recurring Detection** — Uses pattern-matching algorithms as a first pass, then falls back to analyzing historical dates in your local database. If an unknown transaction happens roughly ~30 days after an identical one, it is automatically flagged as a Subscription/Salary without relying on LLM guesses.
+- **Smart Overrides (Feedback Loop)** — Prism learns your habits. If the AI hallucinates a name or category, correct it directly in the new `Override` columns inside your Google Sheet. Prism pulls these overrides on the next run, applying them instantly locally to save API tokens and time.
 - **Idempotent** — Maintains a local SQLite database of transaction hashes. Prism never imports the same transaction twice, even if you re-run the same CSV.
 - **Fully Automated (Cron)** — Run it nightly via GitHub Actions. If you add a CSV to the `inbox`, the bot picks it up, updates your Google Sheet, and moves the file to `processed/`.
+- **HTML Dry-Run Reporter** — Running `--dry-run` generates a beautiful offline HTML report mimicking a banking interface that opens in your browser, allowing you to review all AI categorizations before committing them to Sheets.
 
 ### Architecture / How it works
 
@@ -34,8 +50,6 @@ Prism takes your raw bank exports (CSV or PDF), sends them through an AI model (
 Prism automatically creates and formats multiple tabs:
 
 1. **Dashboard**: High-level view for the current year. Shows Income vs Expenses, Spending donuts by category, monthly breakdowns, and recurring cash flow.
-   <p align="center"><img src="assets/dashboard.png" alt="Prism Dashboard" width="800" /></p>
-
 2. **Budget**: A dedicated tab where you define your monthly limits. Prism checks these limits against your spending and displays a Live 🟢/🟡/🔴 Budget Status on the Dashboard.
    <p align="center"><img src="assets/budget.png" alt="Prism Budget" width="800" /></p>
 

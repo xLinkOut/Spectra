@@ -100,29 +100,39 @@ Prism automatically creates and formats multiple tabs:
 
 ### 1. Google Sheets API (`SPREADSHEET_ID` & `credentials.json`)
 
-To allow Prism to write to your Google Sheet, you need a Service Account.
+To allow Prism to write to your Google Sheet without logging in every time, you need a "Service Account" (a bot user).
 
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/).
 2. Create a new Project (e.g., "Prism Finance").
-3. Navigate to **APIs & Services > Library** and enable **Google Sheets API** and **Google Drive API**.
-4. Navigate to **APIs & Services > Credentials**.
-5. Click **Create Credentials > Service Account**. Name it (e.g., "prism-bot").
-6. Click on the newly created Service Account, go to the **Keys** tab, click **Add Key > Create new key**, choose **JSON**, and download it.
-7. Rename the downloaded file to `credentials.json` and place it in the root of the Prism folder.
-8. **CRITICAL STEP**: Open the `credentials.json` file and copy the `client_email` address.
-9. Create a new blank Google Sheet. Click the **Share** button in the top right, paste the `client_email`, and give it **Editor** permissions.
-10. Copy the Spreadsheet ID from the URL of your new Google Sheet:  
-    `https://docs.google.com/spreadsheets/d/`**`<SPREADSHEET_ID>`**`/edit`
-11. Add this ID to the `SPREADSHEET_ID` variable in your `.env`.
+3. In the top search bar, type **Google Sheets API** and click **Enable**.
+4. Search for **Google Drive API** and click **Enable**.
+5. Navigate to **APIs & Services > Credentials** in the left sidebar.
+6. Click **Create Credentials > Service Account** at the top. Name it (e.g., "prism-bot") and click **Done**.
+7. In the list of Service Accounts, click the email address of the one you just created.
+8. Go to the **Keys** tab, click **Add Key > Create new key**. Choose **JSON** and hit Create. The `credentials.json` file will download to your computer.
+9. **CRITICAL**: Move this downloaded file into the root of your cloned `Prism` folder and rename it exactly to `credentials.json`.
+10. Open the `credentials.json` file in a text editor and copy the `"client_email"` address (it looks like `prism-bot@prism-finance.iam.gserviceaccount.com`).
+11. Create a new blank Google Sheet on your personal Google Drive. 
+12. Click the big **Share** button in the top right, paste the `client_email`, and give the bot **Editor** permissions.
+13. Copy the long **Spreadsheet ID** from the URL of your new Google Sheet:  
+    `https://docs.google.com/spreadsheets/d/`**`<THIS_LONG_STRING_IS_THE_SPREADSHEET_ID>`**`/edit`
+14. Paste this ID into your `.env` file under `SPREADSHEET_ID`.
 
 ### 2. AI Provider (`OPENAI_API_KEY` or `GEMINI_API_KEY`)
 
-Prism supports **OpenAI** and **Google Gemini**.
+Prism supports **OpenAI** (ChatGPT) and **Google Gemini**. Gemini is highly recommended to start because it offers a very generous free tier.
 
-| Provider | Config | Notes |
-|----------|--------|-------|
-| OpenAI | `AI_PROVIDER=openai` + `OPENAI_API_KEY` | Best categorization accuracy. Create an API key at [platform.openai.com](https://platform.openai.com). |
-| Gemini | `AI_PROVIDER=gemini` + `GEMINI_API_KEY` | Free tier available. Get a key at [aistudio.google.com](https://aistudio.google.com/apikey). |
+**To use Google Gemini (Free Tier):**
+1. Go to [Google AI Studio](https://aistudio.google.com/apikey).
+2. Click **Create API Key**.
+3. Copy the key and put it in your `.env` file as `GEMINI_API_KEY`.
+4. Ensure your `.env` has `AI_PROVIDER=gemini`.
+
+**To use OpenAI (Paid):**
+1. Go to [OpenAI Platform](https://platform.openai.com/api-keys).
+2. Click **Create new secret key**.
+3. Copy the key and put it in your `.env` file as `OPENAI_API_KEY`.
+4. Ensure your `.env` has `AI_PROVIDER=openai`.
 
 ---
 
@@ -132,14 +142,14 @@ Prism includes a workflow (`.github/workflows/prism.yml`) that runs every night 
 
 ### Setup GitHub Secrets
 
-Go to your GitHub Repository **Settings → Secrets and variables → Actions**. Add the following **Repository Secrets**:
+Go to your GitHub Repository homepage → **Settings → Secrets and variables → Actions**. Add the following **Repository Secrets**:
 
-1. **`OPENAI_API_KEY`**: Your OpenAI key.
+1. **`OPENAI_API_KEY`** or **`GEMINI_API_KEY`**: Your chosen AI key.
 2. **`SPREADSHEET_ID`**: Your Google Sheet ID.
 3. **`GOOGLE_SHEETS_CREDENTIALS_B64`**: The base64-encoded version of your `credentials.json`.
    
    To generate this string:
-   * **macOS/Linux**: `base64 -i credentials.json | pbcopy` (copies to clipboard)
+   * **macOS/Linux**: `base64 -i credentials.json | pbcopy` (copies the giant string to your clipboard)
    * **Windows (PowerShell)**: `[Convert]::ToBase64String([IO.File]::ReadAllBytes("credentials.json")) | clip`
 
 When the action runs, it processes the `inbox/` folder. Processed files are moved to `processed/` and the changes are automatically committed back to the repository.

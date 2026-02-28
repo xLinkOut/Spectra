@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.10+-blue" alt="Python" />
-  <img src="https://img.shields.io/badge/license-CC--BY--NC--4.0-lightgrey" alt="License" />
+  <img src="https://img.shields.io/badge/license-AGPL--3.0-lightgrey" alt="License" />
   <img src="https://img.shields.io/badge/status-active-success" alt="Status" />
 </p>
 
@@ -176,7 +176,14 @@ When the action runs, it processes the `inbox/` folder. Processed files are move
 
 ## 📄 License
 
-This project is licensed under the **Creative Commons Attribution-NonCommercial 4.0 International License (CC BY-NC 4.0)**. 
-- You are free to use, share, and adapt the code.
-- You **may not** use the material for commercial purposes or resale.
-See the `LICENSE.md` file for details.
+## License
+
+Spectra is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
+
+This ensures that if you modify Spectra and run it as a service (e.g. SaaS), you must also make the source code of your modifications available to users.
+
+### Commercial License
+
+A separate commercial license is available for organizations that wish to use Spectra in a closed-source or proprietary product without AGPL obligations.
+
+For commercial licensing inquiries, please contact: francesco.gabrieli.fg@gmail.com

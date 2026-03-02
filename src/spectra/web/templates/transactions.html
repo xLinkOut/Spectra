@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}Transactions — Spectra{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Transactions</h1>
+<p class="page-subtitle">Click a category or merchant to edit it</p>
+
+<div class="table-container">
+    <div class="table-toolbar">
+        <input type="text" id="searchInput" placeholder="Search merchants..." style="flex:1; max-width: 260px;">
+        <select id="categoryFilter">
+            <option value="">All categories</option>
+        </select>
+        <input type="date" id="dateFrom" title="From date">
+        <input type="date" id="dateTo" title="To date">
+    </div>
+
+    <div id="tableBody">
+        <div class="empty-state">
+            <div class="icon">📋</div>
+            <h3>Loading...</h3>
+        </div>
+    </div>
+
+    <div class="pagination" id="pagination"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let currentPage = 1;
+    let categories = [];
+
+    async function loadCategories() {
+        const res = await fetch('/api/categories');
+        const data = await res.json();
+        categories = data.categories;
+
+        const select = document.getElementById('categoryFilter');
+        categories.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c;
+            opt.textContent = c;
+            select.appendChild(opt);
+        });
+    }
+
+    async function loadTransactions(page = 1) {
+        currentPage = page;
+        const search = document.getElementById('searchInput').value;
+        const category = document.getElementById('categoryFilter').value;
+        const dateFrom = document.getElementById('dateFrom').value;
+        const dateTo = document.getElementById('dateTo').value;
+
+        const params = new URLSearchParams({ page, per_page: 50 });
+        if (search) params.set('search', search);
+        if (category) params.set('category', category);
+        if (dateFrom) params.set('date_from', dateFrom);
+        if (dateTo) params.set('date_to', dateTo);
+
+        const res = await fetch(`/api/transactions?${params}`);
+        const data = await res.json();
+
+        renderTable(data.transactions);
+        renderPagination(data.page, data.pages);
+    }
+
+    function renderTable(txns) {
+        const container = document.getElementById('tableBody');
+
+        if (txns.length === 0) {
+            container.innerHTML = `
+            <div class="empty-state">
+                <div class="icon">📋</div>
+                <h3>No transactions found</h3>
+                <p>Upload a CSV to get started</p>
+            </div>`;
+            return;
+        }
+
+        let html = `<table>
+        <thead><tr>
+            <th>Date</th>
+            <th>Merchant</th>
+            <th>Category</th>
+            <th style="text-align:right">Amount</th>
+        </tr></thead><tbody>`;
+
+        for (const t of txns) {
+            const isExpense = t.amount < 0;
+            const amountClass = isExpense ? 'expense' : 'income';
+            const isUncategorized = t.category === 'Uncategorized';
+            const badgeClass = isUncategorized ? 'badge badge-uncategorized' : 'badge';
+            const dotColor = isUncategorized ? '' : `background:${getCategoryColor(t.category)}`;
+
+            html += `<tr>
+            <td>${t.date}</td>
+            <td>
+                <span class="editable" onclick="editField(this, '${t.id}', 'merchant')">${t.merchant}</span>
+            </td>
+            <td>
+                <span class="${badgeClass}" onclick="editField(this, '${t.id}', 'category')">
+                    <span class="badge-dot" style="${dotColor}"></span>
+                    ${t.category}
+                </span>
+            </td>
+            <td class="amount ${amountClass}" style="text-align:right">${formatCurrency(t.amount)}</td>
+        </tr>`;
+        }
+
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
+
+    function renderPagination(page, total) {
+        const container = document.getElementById('pagination');
+        if (total <= 1) { container.innerHTML = ''; return; }
+
+        let html = `<button ${page <= 1 ? 'disabled' : ''} onclick="loadTransactions(${page - 1})">← Prev</button>`;
+        html += `<span style="font-size:13px;color:#787774">Page ${page} of ${total}</span>`;
+        html += `<button ${page >= total ? 'disabled' : ''} onclick="loadTransactions(${page + 1})">Next →</button>`;
+        container.innerHTML = html;
+    }
+
+    function getCategoryColor(cat) {
+        const colors = {
+            'Digital Subscriptions': '#2EAADC', 'Food & Dining': '#D9730D',
+            'Transport': '#448361', 'Shopping': '#9B51E0', 'Travel': '#337EA9',
+            'Health': '#E16259', 'Insurance': '#6940A5', 'Utilities': '#CC8E22',
+            'Salary': '#0F7B6C', 'Pension': '#0F7B6C',
+        };
+        return colors[cat] || '#787774';
+    }
+
+    function editField(el, txId, field) {
+        const current = el.textContent.trim();
+        const input = document.createElement('input');
+        input.className = 'edit-input';
+        input.value = current;
+        el.replaceWith(input);
+        input.focus();
+        input.select();
+
+        async function save() {
+            const newVal = input.value.trim();
+            if (newVal && newVal !== current) {
+                const body = {};
+                body[field] = newVal;
+                await fetch(`/api/transactions/${txId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                showToast(`${field === 'category' ? 'Category' : 'Merchant'} updated`);
+            }
+            loadTransactions(currentPage);
+        }
+
+        input.addEventListener('blur', save);
+        input.addEventListener('keydown', e => {
+            if (e.key === 'Enter') save();
+            if (e.key === 'Escape') loadTransactions(currentPage);
+        });
+    }
+
+    // Debounced search
+    let searchTimeout;
+    document.getElementById('searchInput').addEventListener('input', () => {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => loadTransactions(1), 300);
+    });
+    document.getElementById('categoryFilter').addEventListener('change', () => loadTransactions(1));
+    document.getElementById('dateFrom').addEventListener('change', () => loadTransactions(1));
+    document.getElementById('dateTo').addEventListener('change', () => loadTransactions(1));
+
+    loadCategories();
+    loadTransactions();
+</script>
+{% endblock %}

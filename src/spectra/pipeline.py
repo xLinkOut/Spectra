@@ -238,12 +238,19 @@ def main() -> None:
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--file", "-f", help="Path to a bank CSV or PDF export")
     group.add_argument("--inbox", help="Path to folder with CSV/PDF files (processes all)")
+    group.add_argument("--serve", action="store_true", help="Launch the web dashboard")
 
     parser.add_argument("--currency", default=None, help="Currency code (default: from .env BASE_CURRENCY)")
     parser.add_argument("--dry-run", action="store_true", help="Print results without writing to Sheets")
+    parser.add_argument("--port", type=int, default=8080, help="Port for the web dashboard (default: 8080)")
 
     args = parser.parse_args()
     settings = load_settings()
+
+    if args.serve:
+        from spectra.web.server import serve
+        serve(port=args.port)
+        return
 
     target_currency = args.currency or settings.base_currency
 
@@ -259,3 +266,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

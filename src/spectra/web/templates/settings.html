@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Settings — Spectra{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Settings</h1>
+<p class="page-subtitle">Managed via .env file — shown here as read-only reference</p>
+
+<div class="settings-group">
+    <h3>AI Provider</h3>
+    <div class="settings-row">
+        <div class="settings-label">
+            Provider
+            <small>Set AI_PROVIDER in .env (local, openai, or gemini)</small>
+        </div>
+        <div id="provider" style="font-weight:600; font-size:14px;">—</div>
+    </div>
+</div>
+
+<div class="settings-group">
+    <h3>Currency</h3>
+    <div class="settings-row">
+        <div class="settings-label">
+            Base Currency
+            <small>All amounts converted to this currency</small>
+        </div>
+        <div id="currency" style="font-weight:600; font-size:14px;">—</div>
+    </div>
+</div>
+
+<div class="settings-group">
+    <h3>Database</h3>
+    <div class="settings-row">
+        <div class="settings-label">
+            Total Transactions
+            <small>Stored in local SQLite database</small>
+        </div>
+        <div id="txCount" style="font-weight:600; font-size:14px;">—</div>
+    </div>
+    <div class="settings-row">
+        <div class="settings-label">
+            Known Merchants
+            <small>Merchants with learned categories</small>
+        </div>
+        <div id="merchantCount" style="font-weight:600; font-size:14px;">—</div>
+    </div>
+    <div class="settings-row">
+        <div class="settings-label">
+            Export
+            <small>Download all transactions as CSV</small>
+        </div>
+        <button class="btn btn-secondary" onclick="exportCSV()">📥 Download CSV</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function loadSettings() {
+        // We infer settings from available data
+        try {
+            const [sumRes, catRes, txRes] = await Promise.all([
+                fetch('/api/summary'),
+                fetch('/api/categories'),
+                fetch('/api/transactions?per_page=10'),
+            ]);
+            const summary = await sumRes.json();
+            const cats = await catRes.json();
+            const txData = await txRes.json();
+
+            document.getElementById('txCount').textContent = txData.total.toLocaleString();
+            document.getElementById('merchantCount').textContent = cats.categories.length.toLocaleString() + ' categories';
+        } catch (err) {
+            console.error(err);
+        }
+
+        // These come from the backend config
+        document.getElementById('provider').textContent = 'Loaded from .env';
+        document.getElementById('currency').textContent = 'Loaded from .env';
+    }
+
+    async function exportCSV() {
+        try {
+            const res = await fetch('/api/transactions?per_page=200&page=1');
+            const data = await res.json();
+
+            if (data.transactions.length === 0) {
+                showToast('No transactions to export', 'error');
+                return;
+            }
+
+            let csv = 'Date,Merchant,Category,Amount\n';
+            for (const t of data.transactions) {
+                csv += `${t.date},"${t.merchant}","${t.category}",${t.amount}\n`;
+            }
+
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'spectra_transactions.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('CSV downloaded!');
+        } catch (err) {
+            showToast('Export failed', 'error');
+        }
+    }
+
+    loadSettings();
+</script>
+{% endblock %}

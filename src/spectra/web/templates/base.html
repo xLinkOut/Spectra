@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Spectra{% endblock %}</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <span class="icon">🌟</span>
+            Spectra
+        </div>
+        <nav>
+            <ul class="sidebar-nav">
+                <li><a href="/" class="{% if request.url.path == '/' %}active{% endif %}">
+                    <span class="nav-icon">📊</span> Dashboard
+                </a></li>
+                <li><a href="/transactions" class="{% if request.url.path == '/transactions' %}active{% endif %}">
+                    <span class="nav-icon">📋</span> Transactions
+                </a></li>
+                <li><a href="/upload" class="{% if request.url.path == '/upload' %}active{% endif %}">
+                    <span class="nav-icon">📤</span> Upload
+                </a></li>
+                <li><a href="/settings" class="{% if request.url.path == '/settings' %}active{% endif %}">
+                    <span class="nav-icon">⚙️</span> Settings
+                </a></li>
+            </ul>
+        </nav>
+    </aside>
+
+    <main class="main">
+        {% block content %}{% endblock %}
+    </main>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 4000);
+        }
+
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(amount);
+        }
+    </script>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

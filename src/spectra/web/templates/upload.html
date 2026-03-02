@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}Upload — Spectra{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Upload</h1>
+<p class="page-subtitle">Drag and drop a CSV or PDF bank export</p>
+
+<div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+    <div class="icon">📄</div>
+    <h3>Drop your bank export here</h3>
+    <p>Supports CSV and PDF files</p>
+    <input type="file" id="fileInput" accept=".csv,.pdf">
+</div>
+
+<div id="processing" style="display:none; text-align:center; padding:40px;">
+    <div class="spinner"></div>
+    <p style="margin-top:16px; color:#787774; font-size:14px;">Processing transactions...</p>
+</div>
+
+<div class="preview-section" id="previewSection">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h2 style="font-size:18px; font-weight:600;" id="previewTitle">Preview</h2>
+        <div style="display:flex; gap:8px;">
+            <button class="btn btn-secondary" onclick="cancelPreview()">Cancel</button>
+            <button class="btn btn-success" id="confirmBtn" onclick="confirmImport()">
+                ✅ Confirm & Save
+            </button>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Merchant</th>
+                    <th>Category</th>
+                    <th>Recurring</th>
+                    <th style="text-align:right">Amount</th>
+                </tr>
+            </thead>
+            <tbody id="previewBody"></tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let previewData = [];
+
+    const zone = document.getElementById('uploadZone');
+    const fileInput = document.getElementById('fileInput');
+
+    // Drag & drop
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+    zone.addEventListener('drop', e => {
+        e.preventDefault();
+        zone.classList.remove('drag-over');
+        if (e.dataTransfer.files.length) uploadFile(e.dataTransfer.files[0]);
+    });
+
+    fileInput.addEventListener('change', () => {
+        if (fileInput.files.length) uploadFile(fileInput.files[0]);
+    });
+
+    async function uploadFile(file) {
+        zone.style.display = 'none';
+        document.getElementById('processing').style.display = 'block';
+
+        const form = new FormData();
+        form.append('file', file);
+
+        try {
+            const res = await fetch('/api/upload', { method: 'POST', body: form });
+            const data = await res.json();
+
+            document.getElementById('processing').style.display = 'none';
+
+            if (!data.transactions || data.transactions.length === 0) {
+                showToast(data.message || 'All transactions already imported', 'error');
+                zone.style.display = '';
+                return;
+            }
+
+            previewData = data.transactions;
+            showPreview(data.transactions, data.message);
+        } catch (err) {
+            document.getElementById('processing').style.display = 'none';
+            zone.style.display = '';
+            showToast('Upload failed: ' + err.message, 'error');
+        }
+    }
+
+    function showPreview(txns, message) {
+        document.getElementById('previewTitle').textContent = message || `${txns.length} transactions`;
+        const body = document.getElementById('previewBody');
+
+        body.innerHTML = txns.map(t => {
+            const cls = t.amount < 0 ? 'expense' : 'income';
+            const uncat = t.category === 'Uncategorized';
+            return `<tr>
+            <td>${t.date}</td>
+            <td>${t.merchant}</td>
+            <td><span class="${uncat ? 'badge badge-uncategorized' : 'badge'}">
+                <span class="badge-dot" style="background:${uncat ? '#D9730D' : '#0F7B6C'}"></span>
+                ${t.category}
+            </span></td>
+            <td style="font-size:12px; color:#787774">${t.recurring || '—'}</td>
+            <td class="amount ${cls}" style="text-align:right">${formatCurrency(t.amount)}</td>
+        </tr>`;
+        }).join('');
+
+        document.getElementById('previewSection').classList.add('visible');
+    }
+
+    function cancelPreview() {
+        document.getElementById('previewSection').classList.remove('visible');
+        document.getElementById('uploadZone').style.display = '';
+        previewData = [];
+        fileInput.value = '';
+    }
+
+    async function confirmImport() {
+        const btn = document.getElementById('confirmBtn');
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+
+        try {
+            const res = await fetch('/api/confirm', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ transactions: previewData }),
+            });
+            const data = await res.json();
+            showToast(data.message || 'Transactions saved!');
+
+            setTimeout(() => { window.location.href = '/transactions'; }, 1500);
+        } catch (err) {
+            showToast('Save failed: ' + err.message, 'error');
+            btn.disabled = false;
+            btn.textContent = '✅ Confirm & Save';
+        }
+    }
+</script>
+{% endblock %}

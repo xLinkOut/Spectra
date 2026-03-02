@@ -84,15 +84,23 @@ Spectra automatically creates and formats multiple tabs:
    GOOGLE_SHEETS_CREDENTIALS_FILE=credentials.json
    ```
 
-4. **Run Spectra**
-   Place your bank exported files `.csv` or `.pdf` in the `inbox/` directory.
+4. **Launch the Dashboard**
    ```bash
-   # Preview without writing to Google Sheets
-   python -m spectra --inbox inbox/ --dry-run
-   
-   # Run the full pipeline (Clean, Categorise, Write to Sheets, Update Dashboards)
-   python -m spectra --inbox inbox/
+   python -m spectra --serve
    ```
+   Open `http://localhost:8080` — upload CSVs, review categories, and confirm from the browser.
+
+   <details>
+   <summary>CLI alternative (advanced)</summary>
+
+   ```bash
+   # Process a folder of bank exports via CLI
+   python -m spectra --inbox inbox/
+
+   # Preview only (no writes) — useful for CI/CD or scripting
+   python -m spectra --inbox inbox/ --dry-run
+   ```
+   </details>
 
 ---
 

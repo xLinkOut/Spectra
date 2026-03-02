@@ -96,6 +96,21 @@ Spectra automatically creates and formats multiple tabs:
 
 ---
 
+## 🔌 Local Mode (No API Keys)
+
+Spectra can run **fully offline** without any cloud AI. Set `AI_PROVIDER=local` in your `.env` and categorization happens entirely on your machine using a 6-step deterministic cascade:
+
+1. **User Overrides**: Previously corrected categories from your Google Sheet
+2. **Merchant Memory**: Exact match against merchants Spectra has seen before (stored in SQLite)
+3. **Fuzzy Match**: Approximate matching (e.g., "STARBUCKS ROMA" matches "Starbucks") via `rapidfuzz`
+4. **Keyword Rules**: ~50 built-in patterns covering Netflix, Spotify, Amazon, Uber, Trenitalia, supermarkets, insurance, utilities, and more
+5. **ML Classifier** (optional): A lightweight TF-IDF + Logistic Regression model trained on *your* history. Install with `pip install scikit-learn` to enable
+6. **Fallback**: Anything unmatched is labeled "Uncategorized" for you to correct in Sheets (Spectra remembers the correction next time)
+
+> **Tip**: Run Spectra with `openai` or `gemini` first to build up your merchant memory. Then switch to `AI_PROVIDER=local` for zero-cost, zero-latency, fully private runs going forward!
+
+---
+
 ## 🔑 Getting the Keys
 
 ### 1. Google Sheets API (`SPREADSHEET_ID` & `credentials.json`)

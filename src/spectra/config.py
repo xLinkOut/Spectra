@@ -37,7 +37,7 @@ class Settings(BaseSettings):
         return v.strip().upper()
 
     # ── AI Provider ──────────────────────────────────────────────
-    ai_provider: Literal["gemini", "openai"] = "gemini"
+    ai_provider: Literal["gemini", "openai", "local"] = "gemini"
 
     gemini_api_key: str = ""
     gemini_model: str = "gemma-3-27b-it"
@@ -71,6 +71,7 @@ class Settings(BaseSettings):
             missing.append("GEMINI_API_KEY")
         elif self.ai_provider == "openai" and not self.openai_api_key:
             missing.append("OPENAI_API_KEY")
+        # 'local' mode needs no API keys
 
         if missing:
             logger.warning(

@@ -95,7 +95,7 @@ def run(settings: Settings, file: str, currency: str, dry_run: bool) -> None:
         if pre_categorised:
             logger.info("Applied overrides to %d transaction(s) locally", len(pre_categorised))
 
-        # ── Step 4: AI Matching (only for unknown txns) ─────────────
+        # ── Step 4: Categorisation (LLM or Local) ────────────────
         categorised = []
         if to_llm:
             flat = [
@@ -103,21 +103,39 @@ def run(settings: Settings, file: str, currency: str, dry_run: bool) -> None:
                 for t in to_llm
             ]
 
-            if settings.ai_provider == "gemini":
-                api_key, model = settings.gemini_api_key, settings.gemini_model
-            else:
-                api_key, model = settings.openai_api_key, settings.openai_model
+            if settings.ai_provider == "local":
+                from spectra.local_categorizer import categorise_local
+                from spectra.ml_classifier import train_classifier
 
-            llm_results = categorise(
-                flat, existing_categories,
-                provider=settings.ai_provider, api_key=api_key, model=model,
-                base_currency=settings.base_currency,
-            )
-            
-            if not llm_results:
-                logger.warning("⚠️  LLM returned no results for %d transactions", len(to_llm))
+                merchant_db = db.get_merchant_categories()
+                training_data = db.get_training_data()
+                ml_clf = train_classifier(training_data) if training_data else None
+
+                local_results = categorise_local(
+                    flat, existing_categories,
+                    merchant_db=merchant_db,
+                    ml_classifier=ml_clf,
+                )
+                if not local_results:
+                    logger.warning("⚠️  Local categoriser returned no results for %d transactions", len(to_llm))
+                else:
+                    categorised.extend(local_results)
             else:
-                categorised.extend(llm_results)
+                if settings.ai_provider == "gemini":
+                    api_key, model = settings.gemini_api_key, settings.gemini_model
+                else:
+                    api_key, model = settings.openai_api_key, settings.openai_model
+
+                llm_results = categorise(
+                    flat, existing_categories,
+                    provider=settings.ai_provider, api_key=api_key, model=model,
+                    base_currency=settings.base_currency,
+                )
+
+                if not llm_results:
+                    logger.warning("⚠️  LLM returned no results for %d transactions", len(to_llm))
+                else:
+                    categorised.extend(llm_results)
                 
         # Merge pre-categorised (overrides) and LLM-categorised
         categorised.extend(pre_categorised)
@@ -156,6 +174,9 @@ def run(settings: Settings, file: str, currency: str, dry_run: bool) -> None:
             sheets.append_transactions(categorised)
             # Save history (date, amount, clean_name) for future temporal recurring detection
             db.save_history(categorised)
+            # Save merchant→category mappings for future local mode runs
+            new_mappings = {t.clean_name: t.category for t in categorised if t.category != "Uncategorized"}
+            db.save_merchant_categories_batch(new_mappings)
             logger.info("✅ Done — %d rows written to Google Sheets", len(categorised))
 
             # Refresh the Dashboard tab with updated charts

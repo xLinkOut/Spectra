@@ -27,6 +27,11 @@ CREATE TABLE IF NOT EXISTS user_overrides (
     category             TEXT NOT NULL,
     clean_name           TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS merchant_categories (
+    clean_name  TEXT PRIMARY KEY,
+    category    TEXT NOT NULL
+);
 """
 
 
@@ -106,6 +111,45 @@ class BookmarkDB:
             history.setdefault(clean_name, []).append((date, amount))
             
         return history
+
+    # ── Merchant Categories (for local mode) ──────────────────────
+
+    def save_merchant_category(self, clean_name: str, category: str) -> None:
+        """Save a merchant→category mapping for future local categorisation."""
+        self._conn.execute(
+            "INSERT OR REPLACE INTO merchant_categories (clean_name, category) VALUES (?, ?)",
+            (clean_name, category),
+        )
+        self._conn.commit()
+
+    def save_merchant_categories_batch(self, mappings: dict[str, str]) -> None:
+        """Save multiple merchant→category mappings at once."""
+        if not mappings:
+            return
+        self._conn.executemany(
+            "INSERT OR REPLACE INTO merchant_categories (clean_name, category) VALUES (?, ?)",
+            list(mappings.items()),
+        )
+        self._conn.commit()
+
+    def get_merchant_categories(self) -> dict[str, str]:
+        """Fetch all known merchant→category mappings."""
+        rows = self._conn.execute("SELECT clean_name, category FROM merchant_categories").fetchall()
+        return {name: cat for name, cat in rows}
+
+    def get_training_data(self) -> list[tuple[str, str]]:
+        """Return (raw_description, category) pairs for ML training.
+
+        Joins tx_history with merchant_categories to associate descriptions with categories.
+        """
+        rows = self._conn.execute(
+            """
+            SELECT h.clean_name, m.category
+            FROM tx_history h
+            INNER JOIN merchant_categories m ON h.clean_name = m.clean_name
+            """
+        ).fetchall()
+        return [(desc, cat) for desc, cat in rows]
 
     # ── LLM Feedback Overrides ───────────────────────────────────
 

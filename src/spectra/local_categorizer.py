@@ -140,7 +140,7 @@ _KEYWORD_RULES: list[tuple[re.Pattern, str, str | None]] = [
     # ── Travel ────────────────────────────────────────────────
     (re.compile(r"(?i)\bryanair|easyjet|vueling|wizzair|lufthansa|alitalia|ita\s*airways\b"), "Travel", None),
     (re.compile(r"(?i)\bturkish\s*airlines|klm|air\s*france|british\s*airways|iberia|tap\b"), "Travel", None),
-    (re.compile(r"(?i)\bbooking\.com|airbnb|expedia|hotels\.com|trivago|lastminute\b"), "Travel", None),
+    (re.compile(r"(?i)\bbooking[\s.]?com|airbnb|expedia|hotels[\s.]?com|trivago|lastminute\b"), "Travel", None),
     # Hotel patterns — match BEFORE utilities to avoid conflicts
     (re.compile(r"(?i)\bhotel\b|\balbergo\b|\bb&b\b|\bbed\s+and\s+breakfast\b|\bhostel\b"), "Travel", None),
     (re.compile(r"(?i)\bresort\b|\bmotel\b|\blodge\b|\bcamping\b|\bvilla\b"), "Travel", None),
@@ -150,7 +150,7 @@ _KEYWORD_RULES: list[tuple[re.Pattern, str, str | None]] = [
     (re.compile(r"(?i)\bfrecciarossa|frecciargento|frecciabianca|intercity\b"), "Travel", "Trenitalia"),
 
     # ── Entertainment ─────────────────────────────────────────
-    (re.compile(r"(?i)\bcinema|cine\s|uci\s*cinema|the\s*space\s*cinema\b"), "Entertainment", None),
+    (re.compile(r"(?i)\bcinema|cine\s|cityplex|uci\s*cinema|the\s*space\s*cinema\b"), "Entertainment", None),
     (re.compile(r"(?i)\bstadio|stadium|bigliett|arena\b"), "Entertainment", None),
     (re.compile(r"(?i)\bconcerto|concert|teatro|opera|museum|musei\b"), "Entertainment", None),
     (re.compile(r"(?i)\bticketone|ticketmaster|vivaticket|eventbrite\b"), "Entertainment", None),
@@ -193,7 +193,7 @@ _KEYWORD_RULES: list[tuple[re.Pattern, str, str | None]] = [
     (re.compile(r"(?i)\bpalestra|gym|fitness|wellness|crossfit|pilates|yoga\b"), "Health & Fitness", None),
     (re.compile(r"(?i)\bdottore|medico|clinica|ospedale|poliambulatorio\b"), "Health", None),
     (re.compile(r"(?i)\bdentist|odontoiatr|dental\b"), "Health", None),
-    (re.compile(r"(?i)\bpsicologo|terapista|fisioterapi\b"), "Health", None),
+    (re.compile(r"(?i)\bpsicologo|psicologa|terapista|fisioterapi\b"), "Health", None),
     (re.compile(r"(?i)\boptik|ottic|visita\s*oculistica\b"), "Health", None),
 
     # ── Insurance ─────────────────────────────────────────────

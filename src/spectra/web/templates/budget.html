@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Budget — Spectra{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Budget</h1>
+<p class="page-subtitle" id="budgetSubtitle">Monthly spending limits</p>
+
+<!-- Summary bar -->
+<div class="cards" id="budgetSummary">
+    <div class="card">
+        <div class="card-label">On Track</div>
+        <div class="card-value positive" id="statOnTrack">—</div>
+    </div>
+    <div class="card">
+        <div class="card-label">Over Budget</div>
+        <div class="card-value negative" id="statOver">—</div>
+    </div>
+    <div class="card">
+        <div class="card-label">No Limit Set</div>
+        <div class="card-value neutral" id="statNoLimit">—</div>
+    </div>
+</div>
+
+<!-- Budget cards grid -->
+<div class="budget-grid" id="budgetGrid">
+    <div class="empty-state">
+        <div class="icon">⏳</div>
+        <h3>Loading...</h3>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function loadBudget() {
+        const res = await fetch('/api/budget');
+        const data = await res.json();
+
+        // Format month title
+        const [y, m] = data.month.split('-');
+        const monthName = new Date(y, m - 1).toLocaleDateString('en', { month: 'long', year: 'numeric' });
+        document.getElementById('budgetSubtitle').textContent = monthName;
+
+        // Summary cards
+        document.getElementById('statOnTrack').textContent = data.summary.on_track;
+        document.getElementById('statOver').textContent = data.summary.over;
+        document.getElementById('statNoLimit').textContent = data.summary.no_limit;
+
+        const grid = document.getElementById('budgetGrid');
+
+        if (!data.items.length) {
+            grid.innerHTML = `<div class="empty-state">
+                <div class="icon">💰</div>
+                <h3>No spending data yet</h3>
+                <p>Upload a CSV to see your categories here</p>
+                <a href="/upload" class="btn btn-primary" style="margin-top:16px;">📤 Upload CSV</a>
+            </div>`;
+            return;
+        }
+
+        grid.innerHTML = data.items.map((item, i) => {
+            const statusColors = { green: '#0F7B6C', yellow: '#D9730D', red: '#E03E3E', none: '#C4C4C0' };
+            const statusIcons = { green: '🟢', yellow: '🟡', red: '🔴', none: '⚪' };
+            const color = statusColors[item.status];
+            const icon = statusIcons[item.status];
+            const pctDisplay = item.pct !== null ? `${item.pct}%` : '—';
+            const barPct = item.pct !== null ? Math.min(item.pct, 100) : 0;
+
+            return `
+            <div class="budget-card" style="animation-delay: ${i * 0.05}s">
+                <div class="budget-card-header">
+                    <span class="budget-category">${item.category}</span>
+                    <span class="budget-status-icon">${icon}</span>
+                </div>
+                <div class="budget-amounts">
+                    <span class="budget-spent" style="color:${color}">
+                        ${formatCurrency(item.spent)}
+                    </span>
+                    <span class="budget-sep"> / </span>
+                    <span class="budget-limit-display" onclick="editLimit(this, '${item.category}', ${item.limit || ''})"
+                          title="Click to set limit">
+                        ${item.limit ? formatCurrency(item.limit) : 'Set limit'}
+                    </span>
+                </div>
+                <div class="progress-track">
+                    <div class="progress-fill status-${item.status}"
+                         style="width: 0%; --target-width: ${barPct}%"
+                         data-pct="${barPct}">
+                    </div>
+                </div>
+                <div class="budget-pct">${pctDisplay}</div>
+            </div>`;
+        }).join('');
+
+        // Animate progress bars after paint
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                document.querySelectorAll('.progress-fill').forEach(el => {
+                    el.style.width = el.dataset.pct + '%';
+                });
+            });
+        });
+    }
+
+    function editLimit(el, category, current) {
+        const parent = el.parentElement;
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.className = 'edit-input';
+        input.placeholder = 'e.g. 300';
+        input.value = current || '';
+        input.style.width = '100px';
+        el.replaceWith(input);
+        input.focus();
+
+        async function save() {
+            const val = parseFloat(input.value);
+            if (!isNaN(val) && val >= 0) {
+                await fetch(`/api/budget/${encodeURIComponent(category)}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ limit: val }),
+                });
+                showToast(`Budget for ${category} set to ${formatCurrency(val)}`);
+            }
+            loadBudget();
+        }
+
+        input.addEventListener('blur', save);
+        input.addEventListener('keydown', e => {
+            if (e.key === 'Enter') save();
+            if (e.key === 'Escape') loadBudget();
+        });
+    }
+
+    loadBudget();
+</script>
+{% endblock %}

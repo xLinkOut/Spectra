@@ -76,7 +76,14 @@
                 const monthName = new Date(y, m - 1).toLocaleDateString('en', { month: 'long', year: 'numeric' });
                 document.getElementById('subtitle').textContent = monthName;
             } else {
-                document.getElementById('subtitle').textContent = 'No data yet — upload a CSV to get started!';
+                document.getElementById('subtitle').textContent = 'No data yet';
+                document.getElementById('cards').insertAdjacentHTML('afterend',
+                    `<div class="empty-state" style="margin:-16px 0 24px;">
+                        <div class="icon">📊</div>
+                        <h3>Your dashboard is empty</h3>
+                        <p>Upload a bank export to see your spending breakdown</p>
+                        <a href="/upload" class="btn btn-primary" style="margin-top:16px;">📤 Upload CSV</a>
+                    </div>`);
             }
 
             // Category pie chart
@@ -149,8 +156,9 @@
             if (data.top_merchants.length === 0) {
                 merchantList.innerHTML = '<li class="empty-state"><p>No data yet</p></li>';
             } else {
-                merchantList.innerHTML = data.top_merchants.map(m => `
+                merchantList.innerHTML = data.top_merchants.map((m, i) => `
                 <li class="merchant-item">
+                    <span class="merchant-rank">${i + 1}</span>
                     <span class="merchant-name">${m.name}</span>
                     <span class="merchant-amount">${formatCurrency(m.total)}</span>
                 </li>

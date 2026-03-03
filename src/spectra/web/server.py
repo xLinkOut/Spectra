@@ -27,6 +27,24 @@ app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
 templates = Jinja2Templates(directory=str(_TEMPLATES))
 
 
+# ── Global error handler ─────────────────────────────────────────
+
+
+from fastapi.responses import JSONResponse as _JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request, exc):
+    return _JSONResponse({"error": str(exc.detail)}, status_code=exc.status_code)
+
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request, exc):
+    logger.exception("Unhandled error: %s", exc)
+    return _JSONResponse({"error": "Internal server error"}, status_code=500)
+
+
 def _get_db() -> BookmarkDB:
     settings = load_settings()
     return BookmarkDB(settings.db_path)
@@ -213,6 +231,30 @@ async def api_categories():
     return {"categories": [row[0] for row in cats]}
 
 
+# ── API: Settings ────────────────────────────────────────────────
+
+
+@app.get("/api/settings")
+async def api_settings():
+    """Return current config for the settings page."""
+    settings = load_settings()
+    with _get_db() as db:
+        tx_count = db._conn.execute("SELECT COUNT(*) FROM tx_history").fetchone()[0]
+        merchant_count = db._conn.execute("SELECT COUNT(*) FROM merchant_categories").fetchone()[0]
+        cats = db._conn.execute(
+            "SELECT DISTINCT category FROM tx_history WHERE category != 'Uncategorized'"
+        ).fetchall()
+
+    return {
+        "provider": settings.ai_provider,
+        "currency": settings.base_currency,
+        "tx_count": tx_count,
+        "merchant_count": merchant_count,
+        "category_count": len(cats),
+        "sheets_connected": bool(settings.spreadsheet_id),
+    }
+
+
 # ── API: Upload & Process ────────────────────────────────────────
 
 
@@ -221,8 +263,15 @@ async def api_upload(file: UploadFile = File(...)):
     """Upload a CSV/PDF, parse & categorise, return preview."""
     settings = load_settings()
 
+    # Validate file type
+    suffix = Path(file.filename or "upload.csv").suffix.lower()
+    if suffix not in (".csv", ".pdf"):
+        return JSONResponse(
+            {"error": f"Unsupported file type: {suffix}. Upload a .csv or .pdf"},
+            status_code=400,
+        )
+
     # Save upload to temp file
-    suffix = Path(file.filename or "upload.csv").suffix
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         shutil.copyfileobj(file.file, tmp)
         tmp_path = tmp.name
@@ -368,6 +417,183 @@ async def api_confirm(request: Request):
                 return {"ok": True, "message": f"Saved {len(cats)} transactions (Sheets sync failed)"}
 
     return {"ok": True, "message": f"Saved {len(cats)} transactions to local DB"}
+
+
+
+# ── Pages: Budget & Trends ───────────────────────────────────────
+
+
+@app.get("/budget", response_class=HTMLResponse)
+async def page_budget(request: Request):
+    return templates.TemplateResponse("budget.html", {"request": request})
+
+
+@app.get("/trends", response_class=HTMLResponse)
+async def page_trends(request: Request):
+    return templates.TemplateResponse("trends.html", {"request": request})
+
+
+# ── API: Budget ──────────────────────────────────────────────────
+
+
+@app.get("/api/budget")
+async def api_budget():
+    """Return per-category budget status for the current month."""
+    from datetime import date
+    from collections import defaultdict
+
+    current_month = date.today().strftime("%Y-%m")
+
+    with _get_db() as db:
+        # All expense rows for the current month
+        rows = db._conn.execute(
+            """
+            SELECT category, SUM(amount) as total
+            FROM tx_history
+            WHERE amount < 0 AND date LIKE ?
+            GROUP BY category
+            """,
+            (f"{current_month}%",),
+        ).fetchall()
+
+        limits = db.get_budget_limits()
+
+        # All-time categories so we can show unspent ones too
+        all_cats = db._conn.execute(
+            """
+            SELECT DISTINCT category FROM tx_history
+            WHERE category != 'Uncategorized' AND amount < 0
+            ORDER BY category
+            """
+        ).fetchall()
+
+    spent_by_cat: dict[str, float] = {cat: abs(total) for cat, total in rows}
+    categories = sorted({row[0] for row in all_cats} | set(limits.keys()))
+
+    items = []
+    for cat in categories:
+        spent = round(spent_by_cat.get(cat, 0.0), 2)
+        limit = limits.get(cat)
+        if limit and limit > 0:
+            pct = round(spent / limit * 100, 1)
+            if pct >= 100:
+                status = "red"
+            elif pct >= 80:
+                status = "yellow"
+            else:
+                status = "green"
+        else:
+            pct = None
+            status = "none"
+
+        items.append({
+            "category": cat,
+            "spent": spent,
+            "limit": limit,
+            "pct": pct,
+            "status": status,
+        })
+
+    # Sort: over-budget first, then by spent desc
+    items.sort(key=lambda x: (x["status"] != "red", x["status"] != "yellow", -x["spent"]))
+
+    on_track = sum(1 for i in items if i["status"] == "green")
+    over = sum(1 for i in items if i["status"] == "red")
+    no_limit = sum(1 for i in items if i["status"] == "none")
+
+    return {
+        "month": current_month,
+        "items": items,
+        "summary": {"on_track": on_track, "over": over, "no_limit": no_limit},
+    }
+
+
+@app.patch("/api/budget/{category}")
+async def api_update_budget(category: str, request: Request):
+    """Save or update a monthly budget limit for a category."""
+    body = await request.json()
+    limit = body.get("limit")
+    if limit is None or limit < 0:
+        return JSONResponse({"error": "limit must be a non-negative number"}, status_code=400)
+
+    with _get_db() as db:
+        db.save_budget_limit(category, float(limit))
+
+    return {"ok": True, "category": category, "limit": limit}
+
+
+# ── API: Trends ──────────────────────────────────────────────────
+
+
+@app.get("/api/trends")
+async def api_trends():
+    """Return year-over-year financial data for the Trends page."""
+    from collections import defaultdict
+
+    with _get_db() as db:
+        rows = db._conn.execute(
+            "SELECT date, amount, category FROM tx_history ORDER BY date ASC"
+        ).fetchall()
+
+    if not rows:
+        return {"years": [], "by_year": {}, "monthly": {}}
+
+    # Aggregate by year and month
+    by_year: dict[str, dict] = {}
+    monthly_income: dict[str, float] = defaultdict(float)
+    monthly_expense: dict[str, float] = defaultdict(float)
+    cat_by_year: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+
+    for date_str, amount, category in rows:
+        year = date_str[:4]
+        month = date_str[:7]  # YYYY-MM
+
+        if year not in by_year:
+            by_year[year] = {"income": 0.0, "expenses": 0.0}
+
+        if amount > 0:
+            by_year[year]["income"] += amount
+            monthly_income[month] += amount
+        else:
+            by_year[year]["expenses"] += abs(amount)
+            monthly_expense[month] += abs(amount)
+            if category != "Uncategorized":
+                cat_by_year[year][category] += abs(amount)
+
+    # Compute net flow and savings rate per year
+    years = sorted(by_year.keys())
+    year_stats = {}
+    for y in years:
+        inc = round(by_year[y]["income"], 2)
+        exp = round(by_year[y]["expenses"], 2)
+        net = round(inc - exp, 2)
+        savings_rate = round((net / inc * 100), 1) if inc > 0 else 0.0
+        year_stats[y] = {
+            "income": inc,
+            "expenses": exp,
+            "net": net,
+            "savings_rate": savings_rate,
+            "by_category": {k: round(v, 2) for k, v in sorted(
+                cat_by_year[y].items(), key=lambda x: -x[1]
+            )[:8]},  # top 8 categories
+        }
+
+    # Build monthly series for charts (all years combined, keyed by YYYY-MM)
+    all_months = sorted(set(monthly_income) | set(monthly_expense))
+    monthly_series = [
+        {
+            "month": m,
+            "income": round(monthly_income.get(m, 0), 2),
+            "expenses": round(monthly_expense.get(m, 0), 2),
+        }
+        for m in all_months
+    ]
+
+    return {
+        "years": years,
+        "by_year": year_stats,
+        "monthly_series": monthly_series,
+    }
 
 
 # ── Launch ───────────────────────────────────────────────────────

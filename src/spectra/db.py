@@ -33,6 +33,11 @@ CREATE TABLE IF NOT EXISTS merchant_categories (
     clean_name  TEXT PRIMARY KEY,
     category    TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS budget_limits (
+    category    TEXT PRIMARY KEY,
+    monthly_limit REAL NOT NULL
+);
 """
 
 
@@ -56,6 +61,14 @@ class BookmarkDB:
             self._conn.commit()
         except sqlite3.OperationalError:
             pass  # Column already exists
+        # budget_limits table (for existing DBs pre-budget feature)
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS budget_limits (
+                category      TEXT PRIMARY KEY,
+                monthly_limit REAL NOT NULL
+            )
+        """)
+        self._conn.commit()
 
     # ── Transaction dedup ────────────────────────────────────────
 
@@ -147,6 +160,21 @@ class BookmarkDB:
         """Fetch all known merchant→category mappings."""
         rows = self._conn.execute("SELECT clean_name, category FROM merchant_categories").fetchall()
         return {name: cat for name, cat in rows}
+
+    # ── Budget Limits ───────────────────────────────────────────
+
+    def get_budget_limits(self) -> dict[str, float]:
+        """Return all category→monthly_limit mappings."""
+        rows = self._conn.execute("SELECT category, monthly_limit FROM budget_limits").fetchall()
+        return {cat: lim for cat, lim in rows}
+
+    def save_budget_limit(self, category: str, monthly_limit: float) -> None:
+        """Save or update the monthly budget limit for a category."""
+        self._conn.execute(
+            "INSERT OR REPLACE INTO budget_limits (category, monthly_limit) VALUES (?, ?)",
+            (category, monthly_limit),
+        )
+        self._conn.commit()
 
     def get_training_data(self) -> list[tuple[str, str]]:
         """Return (raw_description, category) pairs for ML training.

@@ -9,10 +9,17 @@
     <h3>AI Provider</h3>
     <div class="settings-row">
         <div class="settings-label">
-            Provider
+            Categorization Engine
             <small>Set AI_PROVIDER in .env (local, openai, or gemini)</small>
         </div>
-        <div id="provider" style="font-weight:600; font-size:14px;">—</div>
+        <span class="settings-badge" id="provider">—</span>
+    </div>
+    <div class="settings-row">
+        <div class="settings-label">
+            Google Sheets
+            <small>Auto-sync transactions when SPREADSHEET_ID is configured</small>
+        </div>
+        <span class="settings-badge" id="sheetsStatus">—</span>
     </div>
 </div>
 
@@ -21,9 +28,9 @@
     <div class="settings-row">
         <div class="settings-label">
             Base Currency
-            <small>All amounts converted to this currency</small>
+            <small>All amounts converted to this currency via ECB rates</small>
         </div>
-        <div id="currency" style="font-weight:600; font-size:14px;">—</div>
+        <div class="settings-value" id="currency">—</div>
     </div>
 </div>
 
@@ -31,22 +38,33 @@
     <h3>Database</h3>
     <div class="settings-row">
         <div class="settings-label">
-            Total Transactions
-            <small>Stored in local SQLite database</small>
+            Transactions
+            <small>Total stored in local SQLite database</small>
         </div>
-        <div id="txCount" style="font-weight:600; font-size:14px;">—</div>
+        <div class="settings-value" id="txCount">—</div>
     </div>
     <div class="settings-row">
         <div class="settings-label">
             Known Merchants
             <small>Merchants with learned categories</small>
         </div>
-        <div id="merchantCount" style="font-weight:600; font-size:14px;">—</div>
+        <div class="settings-value" id="merchantCount">—</div>
     </div>
     <div class="settings-row">
         <div class="settings-label">
-            Export
-            <small>Download all transactions as CSV</small>
+            Categories
+            <small>Distinct categories in use</small>
+        </div>
+        <div class="settings-value" id="categoryCount">—</div>
+    </div>
+</div>
+
+<div class="settings-group">
+    <h3>Export</h3>
+    <div class="settings-row">
+        <div class="settings-label">
+            Download Transactions
+            <small>Export all transactions as a CSV file</small>
         </div>
         <button class="btn btn-secondary" onclick="exportCSV()">📥 Download CSV</button>
     </div>
@@ -56,40 +74,53 @@
 {% block scripts %}
 <script>
     async function loadSettings() {
-        // We infer settings from available data
         try {
-            const [sumRes, catRes, txRes] = await Promise.all([
-                fetch('/api/summary'),
-                fetch('/api/categories'),
-                fetch('/api/transactions?per_page=10'),
-            ]);
-            const summary = await sumRes.json();
-            const cats = await catRes.json();
-            const txData = await txRes.json();
+            const res = await fetch('/api/settings');
+            const s = await res.json();
 
-            document.getElementById('txCount').textContent = txData.total.toLocaleString();
-            document.getElementById('merchantCount').textContent = cats.categories.length.toLocaleString() + ' categories';
+            // Provider badge
+            const provEl = document.getElementById('provider');
+            const provLabels = { local: '🔒 Local (Offline)', openai: '🤖 OpenAI', gemini: '✨ Gemini' };
+            provEl.textContent = provLabels[s.provider] || s.provider;
+            provEl.className = `settings-badge ${s.provider === 'local' ? 'local' : 'cloud'}`;
+
+            // Sheets status
+            const sheetsEl = document.getElementById('sheetsStatus');
+            sheetsEl.textContent = s.sheets_connected ? '✅ Connected' : '⚪ Not configured';
+            sheetsEl.className = `settings-badge ${s.sheets_connected ? 'local' : ''}`;
+
+            // Currency
+            document.getElementById('currency').textContent = s.currency;
+
+            // DB stats
+            document.getElementById('txCount').textContent = s.tx_count.toLocaleString();
+            document.getElementById('merchantCount').textContent = s.merchant_count.toLocaleString();
+            document.getElementById('categoryCount').textContent = s.category_count.toLocaleString();
         } catch (err) {
-            console.error(err);
+            console.error('Settings load error:', err);
         }
-
-        // These come from the backend config
-        document.getElementById('provider').textContent = 'Loaded from .env';
-        document.getElementById('currency').textContent = 'Loaded from .env';
     }
 
     async function exportCSV() {
         try {
-            const res = await fetch('/api/transactions?per_page=200&page=1');
-            const data = await res.json();
+            // Fetch ALL transactions (paginate through)
+            let allTx = [];
+            let page = 1;
+            while (true) {
+                const res = await fetch(`/api/transactions?per_page=200&page=${page}`);
+                const data = await res.json();
+                allTx = allTx.concat(data.transactions);
+                if (page >= data.pages) break;
+                page++;
+            }
 
-            if (data.transactions.length === 0) {
+            if (allTx.length === 0) {
                 showToast('No transactions to export', 'error');
                 return;
             }
 
             let csv = 'Date,Merchant,Category,Amount\n';
-            for (const t of data.transactions) {
+            for (const t of allTx) {
                 csv += `${t.date},"${t.merchant}","${t.category}",${t.amount}\n`;
             }
 
@@ -97,10 +128,10 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'spectra_transactions.csv';
+            a.download = `spectra_export_${new Date().toISOString().slice(0, 10)}.csv`;
             a.click();
             URL.revokeObjectURL(url);
-            showToast('CSV downloaded!');
+            showToast(`Exported ${allTx.length} transactions`);
         } catch (err) {
             showToast('Export failed', 'error');
         }

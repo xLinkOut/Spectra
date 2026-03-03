@@ -4,15 +4,16 @@
 
 <h1 align="center">Spectra</h1>
 <p align="center">
-  <strong>Bank CSV/PDF → AI categorization → Dashboard & Google Sheets</strong><br>
-  Your personal finance dashboard, fully automated.
+  <strong>Bank CSV/PDF → Categorization → Local Dashboard (optional Google Sheets)</strong><br>
+  Your personal finance dashboard, fully automated — local-first, export-based.
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.10+-blue" alt="Python" />
   <img src="https://img.shields.io/badge/license-AGPL--3.0-lightgrey" alt="License" />
   <img src="https://img.shields.io/badge/status-active-success" alt="Status" />
-  <img src="https://img.shields.io/badge/AI-OpenAI%20%7C%20Gemini%20%7C%20Local-blueviolet" alt="AI Providers" />
+  <img src="https://img.shields.io/badge/categorization-openai%20%7C%20gemini%20%7C%20local-blueviolet" alt="Categorization Providers" />
+  <img src="https://img.shields.io/github/stars/francescogabrieli/Spectra?style=social" alt="GitHub stars" />
 </p>
 
 <p align="center">
@@ -23,62 +24,68 @@
 
 ## What is Spectra?
 
-Spectra takes your raw bank exports (CSV or PDF), categorizes every transaction — via AI or fully offline — and visualizes your finances in a **self-hosted web dashboard** and optionally syncs to **Google Sheets**.
+Spectra ingests bank exports (**CSV or PDF**), normalizes messy statement formats, categorizes transactions (via **OpenAI**, **Gemini**, or **fully offline**), and visualizes everything in a **self-hosted local web dashboard**. If you want, it can also sync data to **Google Sheets**.
 
-### Why Spectra exists
-
-Most personal finance tools require direct access to your bank account or lock your data inside proprietary platforms. Spectra works directly from standard bank exports, keeps everything local, and gives you full control.
+- **Local-first**: no Open Banking, no bank logins, you stay in control of the export files
+- **Web UI**: run it on your machine at `http://localhost:8080`
+- **Optional Sheets**: keep everything local, or push to a spreadsheet dashboard if you prefer
 
 ---
 
-## ✨ Features
+## Why Spectra exists
 
-### 🌐 Self-Hosted Web Dashboard
-A Notion-style local dashboard at `localhost:8080` with:
-- **Summary cards** — Total Spent, Income, Subscriptions, Uncategorized count
-- **Spending charts** — Category doughnut + monthly trend bar chart (Chart.js)
-- **Transactions table** — Filterable, searchable, with inline click-to-edit
-- **Drag & drop upload** — Upload CSV/PDF, preview AI categories, confirm & save
-- **Settings** — Live config, DB stats, CSV export
-- **Mobile responsive** — Works on phone/tablet with collapsible sidebar
+Most personal finance tools either require direct access to your bank account or lock your data inside proprietary platforms.
 
-### 🤖 Three AI Modes
+Spectra takes a different approach: it works directly from standard exports (CSV/PDF), keeps the pipeline transparent, and gives you full control over storage and outputs.
 
-Spectra supports three categorization modes, switchable via `AI_PROVIDER` in your `.env`:
+---
+
+## Features
+
+### Self-Hosted Local Web Dashboard
+
+A local dashboard at `http://localhost:8080` to:
+- upload CSV/PDF exports
+- preview and review categorizations
+- edit merchant/category when needed
+- export to CSV/Excel and/or sync to Google Sheets (optional)
+
+### Three categorization modes
+
+Configure via `AI_PROVIDER` in your `.env`:
 
 - **`openai`** — Categorization via OpenAI API. Requires `OPENAI_API_KEY`.
-- **`gemini`** — Categorization via Google Gemini API. Requires `GEMINI_API_KEY`. Free tier available.
-- **`local`** — 100% offline, no API keys needed. Uses a 6-step deterministic cascade:
+- **`gemini`** — Categorization via Google Gemini API. Requires `GEMINI_API_KEY`.
+- **`local`** — 100% offline, no API keys needed. Uses a deterministic cascade:
 
-  1. **User Overrides** — Previously corrected categories
+  1. **User Overrides** — Previously corrected merchant/category mappings
   2. **Merchant Memory** — Exact match against merchants seen before (SQLite)
-  3. **Fuzzy Match** — Approximate matching (e.g., "STARBUCKS ROMA" → "Starbucks") via `rapidfuzz`
-  4. **Keyword Rules** — 120+ built-in patterns covering subscriptions, transport, food, travel, entertainment, shopping, health, taxes, education, cash deposits, and more
-  5. **ML Classifier** (optional) — Trained on *your* history. Install `scikit-learn` to enable
-  6. **Fallback** — "Uncategorized" for manual correction (Spectra remembers next time)
+  3. **Fuzzy Match** — Approximate matching via `rapidfuzz`
+  4. **Keyword Rules** — Built-in patterns covering common expense/income types
+  5. **ML Classifier (optional)** — Trained on *your* history (enable by installing `scikit-learn`)
+  6. **Fallback** — Marks as "Uncategorized" for manual correction (Spectra learns next time)
 
-> **Stress-tested**: 35/35 tricky Italian bank transactions categorized correctly on first pass with zero API calls.
+### Google Sheets dashboard (optional)
 
-### 📊 Google Sheets Dashboard
-Spectra automatically creates and formats multiple tabs:
-- **Dashboard** — Income vs Expenses, spending donuts, monthly breakdowns, recurring cash flow, and budget status
-- **Budget** — Define monthly limits. Spectra shows 🟢/🟡/🔴 Budget Status on the Dashboard
+If enabled, Spectra can create/update:
+- **Dashboard** — Income vs Expenses, category breakdowns, recurring cash flow, budget status
+- **Budget** — Monthly limits with live 🟢/🟡/🔴 status
 - **Transactions YYYY** — Color-coded ledger for each year
-- **Trends** — Year-over-Year comparison with Net Cash Flow, Savings Rate %, and multi-year charts
+- **Trends** — YoY comparisons and multi-year charts
 
-### 🔧 Other Features
-- **Universal Import** — Auto-detects delimiters, bank layouts, Italian/European number formats, multi-line descriptions
-- **Multi-Currency (FX)** — Automatic ECB historical rates via [Frankfurter API](https://www.frankfurter.app/) (no API key needed)
-- **Hybrid Recurring Detection** — Pattern-matching + historical date analysis flags subscriptions/salaries automatically
-- **Smart Overrides** — Correct AI mistakes in Sheets; Spectra learns and applies them locally next time
-- **Idempotent** — SHA1 transaction hashes in SQLite prevent duplicate imports
-- **GitHub Actions** — Nightly cron automation included
+### Pipeline / reliability
+
+- **Universal import** — Auto-detects delimiters, bank layouts, EU number formats (`1.234,56`), multi-line descriptions
+- **Multi-currency FX** — Historical ECB rates via [Frankfurter API](https://www.frankfurter.app/) (no API key)
+- **Recurring detection** — Pattern matching + historical spacing to flag subscriptions/salary
+- **Idempotent** — Transaction hashes in SQLite prevent duplicate imports
+- **Automation-ready** — Can run on a schedule (cron / GitHub Actions)
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
-### 1. Install
+### 1) Install
 
 ```bash
 git clone https://github.com/francescogabrieli/Spectra.git
@@ -88,133 +95,102 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Configure `.env`
+### 2) Configure `.env`
+
+Create a `.env` file in the project root:
 
 ```env
-# Required
 BASE_CURRENCY=EUR
 
-# AI Provider (choose one)
-AI_PROVIDER=local          # Free, offline — no keys needed
-# AI_PROVIDER=openai       # Needs OPENAI_API_KEY
-# AI_PROVIDER=gemini       # Needs GEMINI_API_KEY
+# Choose one provider:
+AI_PROVIDER=local
+# AI_PROVIDER=openai
+# AI_PROVIDER=gemini
+
+# Keys (depending on provider)
+# OPENAI_API_KEY=...
+# GEMINI_API_KEY=...
 
 # Optional: Google Sheets sync
-# SPREADSHEET_ID=1Do7APx...
+# SPREADSHEET_ID=...
 # GOOGLE_SHEETS_CREDENTIALS_FILE=credentials.json
 ```
 
-### 3. Launch
+### 3) Run (web dashboard)
 
 ```bash
 python -m spectra --serve
 ```
 
-Open **http://localhost:8080** — upload CSVs, review categories, and manage everything from the browser.
+Open: **[http://localhost:8080](http://localhost:8080)**
 
-<details>
-<summary><strong>CLI alternatives (advanced)</strong></summary>
+---
+
+## CLI usage (advanced)
 
 ```bash
-# Process a folder of bank exports
+# Process a folder of exports
 python -m spectra --inbox inbox/
 
-# Preview categorization without saving
+# Preview categorization without writing outputs
 python -m spectra --inbox inbox/ --dry-run
 
-# Single file
+# Process a single file
 python -m spectra -f export.csv
 
 # Custom port for the dashboard
 python -m spectra --serve --port 3000
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--serve` | Launch the web dashboard |
-| `--port N` | Set dashboard port (default: 8080) |
-| `--inbox DIR` | Process all CSV/PDF files in a directory |
-| `-f FILE` | Process a single file |
-| `--dry-run` | Preview only, no writes |
-| `--currency USD` | Override base currency |
+---
 
-</details>
+## Getting the keys (optional)
 
+### Google Sheets API (Sheets sync)
+
+To let Spectra write to your Google Sheet, you need a Google Cloud **Service Account**.
+
+1. Go to Google Cloud Console
+2. Create a project and enable **Google Sheets API** and **Google Drive API**
+3. Create a **Service Account** and download the JSON key
+4. Save it as `credentials.json` in the project root
+5. Share your Google Sheet with the service account email (Editor)
+6. Put the Sheet ID into `SPREADSHEET_ID` in your `.env`
+
+### OpenAI / Gemini API keys
+
+* **OpenAI**: create a key and set `OPENAI_API_KEY`, then `AI_PROVIDER=openai`
+* **Gemini**: create a key and set `GEMINI_API_KEY`, then `AI_PROVIDER=gemini`
 
 ---
 
+## GitHub Actions (optional)
 
-## 🔑 Getting the Keys
+Spectra includes a workflow for nightly automation.
 
-<details>
-<summary><strong>Google Sheets API</strong> (optional — for Sheets sync)</summary>
+You'll need these repo secrets:
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a Project → Enable **Google Sheets API** and **Google Drive API**
-3. **Credentials → Service Account** → Create → Download JSON key
-4. Rename to `credentials.json` and place in project root
-5. Create a Google Sheet → **Share** with the service account email (Editor)
-6. Copy the **Spreadsheet ID** from the URL into `.env`
-
-</details>
-
-<details>
-<summary><strong>OpenAI API Key</strong></summary>
-
-1. Go to [OpenAI Platform](https://platform.openai.com/api-keys)
-2. Create a key → set `OPENAI_API_KEY` in `.env`
-3. Set `AI_PROVIDER=openai`
-
-</details>
-
-<details>
-<summary><strong>Gemini API Key</strong> (free tier available)</summary>
-
-1. Go to [Google AI Studio](https://aistudio.google.com/apikey)
-2. Create a key → set `GEMINI_API_KEY` in `.env`
-3. Set `AI_PROVIDER=gemini`
-
-</details>
+* `OPENAI_API_KEY` or `GEMINI_API_KEY`
+* `SPREADSHEET_ID`
+* `GOOGLE_SHEETS_CREDENTIALS_B64` (base64 of `credentials.json`)
 
 ---
 
-## 🤖 GitHub Actions
+## Privacy & Security
 
-Spectra includes `.github/workflows/spectra.yml` for nightly automation at 22:00 CET.
-
-<details>
-<summary><strong>Setup GitHub Secrets</strong></summary>
-
-Add to **Settings → Secrets → Actions**:
-
-| Secret | Value |
-|--------|-------|
-| `OPENAI_API_KEY` or `GEMINI_API_KEY` | Your AI key |
-| `SPREADSHEET_ID` | Google Sheet ID |
-| `GOOGLE_SHEETS_CREDENTIALS_B64` | `base64 -i credentials.json \| pbcopy` |
-
-</details>
+* **No bank connections**: Spectra never logs into your bank — you export and upload files manually
+* **Local-first pipeline**: parsing, normalization, deduplication, and (with `local`) categorization run locally
+* **SQLite storage**: local database stored in `data/spectra.db`
+* **Cloud providers**: when using `openai`/`gemini`, Spectra sends a minimal payload (date + cleaned description + amount)
 
 ---
 
-## 🔒 Privacy & Security
-
-- **Local-first**: Parsing, cleaning, deduplication, and (optionally) categorization all run locally
-- **Minimal AI payload**: Only date + cleaned description + amount are sent to the AI provider
-- **No bank connections**: Spectra never connects to your bank — you export and upload manually
-- **SQLite storage**: Transaction hashes + merchant categories stored locally in `data/prism.db`
-- **Self-hosted dashboard**: Runs on `127.0.0.1` — your data never leaves your machine
-
----
-
-## 📄 License
+## License
 
 **GNU Affero General Public License v3.0 (AGPL-3.0)**
 
-If you modify Spectra and run it as a network service, you must make your source code available.
+If you modify Spectra and run it as a network service, you must make the source code available.
 
-### Commercial License
+### Commercial licensing
 
-A separate commercial license is available for closed-source or proprietary use.
-
-Contact: francesco.gabrieli.fg@gmail.com
+If you need a closed-source or proprietary license, contact: [francesco.gabrieli.fg@gmail.com](mailto:francesco.gabrieli.fg@gmail.com)

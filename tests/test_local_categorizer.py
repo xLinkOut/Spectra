@@ -65,6 +65,15 @@ class TestKeywordRules:
             ("AMAZON MARKETPLACE", "Shopping"),
             ("UBER EATS DELIVERY", "Food & Dining"),
             ("BOOKING.COM AMSTERDAM", "Travel"),
+            # New multinational stress cases
+            ("POS REWE DARMSTADT", "Groceries"),
+            ("MERCADONA BARCELONA 0233", "Groceries"),
+            ("AMZN MKTP US*AMZN.COM/BILL", "Shopping"),
+            ("BOULANGERIE PAUL PARIS", "Food & Dining"),
+            ("SEVEN ELEVEN TOKYO", "Groceries"),
+            ("TFL TRAVEL CHARGE LONDON", "Transport"),
+            ("ROSSMANN DROGERIEMARKT", "Health"),
+            ("AWS EMEA 123456789", "Digital Subscriptions"),
         ],
     )
     def test_keyword_match(self, description: str, expected_category: str):

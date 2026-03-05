@@ -115,10 +115,10 @@ def run(settings: Settings, file: str, currency: str, dry_run: bool) -> None:
 
                 merchant_db = db.get_merchant_categories()
                 training_data = db.get_training_data()
-                ml_clf = train_classifier(training_data) if training_data else None
+                ml_clf = train_classifier(training_data)
 
                 local_results = categorise_local(
-                    flat, existing_categories,
+                    flat,
                     merchant_db=merchant_db,
                     ml_classifier=ml_clf,
                 )

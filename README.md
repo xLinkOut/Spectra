@@ -70,14 +70,12 @@ Configure via `AI_PROVIDER` in your `.env`:
 
 - **`openai`** — Categorization via OpenAI API. Requires `OPENAI_API_KEY`.
 - **`gemini`** — Categorization via Google Gemini API. Requires `GEMINI_API_KEY`.
-- **`local`** — 100% offline, no API keys needed. Uses a deterministic cascade:
+- **`local`** — 100% offline, no API keys needed. Uses a real ML pipeline that works from day 0:
 
-  1. **User Overrides** — Previously corrected merchant/category mappings
-  2. **Merchant Memory** — Exact match against merchants seen before (SQLite)
-  3. **Fuzzy Match** — Approximate matching via `rapidfuzz`
-  4. **Keyword Rules** — Built-in patterns covering common expense/income types
-  5. **ML Classifier (optional)** — Trained on *your* history (enable by installing `scikit-learn`)
-  6. **Fallback** — Marks as "Uncategorized" for manual correction (Spectra learns next time)
+  1. **Merchant Memory** — Exact match against merchants you've seen before (SQLite)
+  2. **Fuzzy Match** — Approximate matching via `rapidfuzz` for name variations (e.g. "Starbucks Roma" → "Starbucks")
+  3. **ML Classifier** — TF-IDF + Logistic Regression bootstrapped with 300+ seed examples covering common merchants worldwide. Progressively personalises as you correct transactions — your corrections carry **10× the weight** of seed data, so the model quickly adapts to your spending patterns
+  4. **Fallback** — Marks as "Uncategorized" for manual correction (Spectra learns next time)
 
 ### Google Sheets sync (optional)
 

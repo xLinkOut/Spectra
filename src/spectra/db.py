@@ -61,6 +61,12 @@ class BookmarkDB:
             self._conn.commit()
         except sqlite3.OperationalError:
             pass  # Column already exists
+        # Add original_description column to tx_history (for ML training on raw text)
+        try:
+            self._conn.execute("ALTER TABLE tx_history ADD COLUMN original_description TEXT NOT NULL DEFAULT ''")
+            self._conn.commit()
+        except sqlite3.OperationalError:
+            pass  # Column already exists
         # budget_limits table (for existing DBs pre-budget feature)
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS budget_limits (
@@ -112,10 +118,17 @@ class BookmarkDB:
         """Save a batch of parsed and ML-categorised transactions to history."""
         self._conn.executemany(
             """
-            INSERT OR REPLACE INTO tx_history (tx_id, date, clean_name, amount, category)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO tx_history (tx_id, date, clean_name, amount, category, original_description)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            [(t.id, t.date, t.clean_name, t.amount, getattr(t, 'category', 'Uncategorized')) for t in transactions],
+            [
+                (
+                    t.id, t.date, t.clean_name, t.amount,
+                    getattr(t, 'category', 'Uncategorized'),
+                    getattr(t, 'original_description', ''),
+                )
+                for t in transactions
+            ],
         )
         # Also mark them as seen
         self.mark_seen_batch([t.id for t in transactions])
@@ -177,18 +190,53 @@ class BookmarkDB:
         self._conn.commit()
 
     def get_training_data(self) -> list[tuple[str, str]]:
-        """Return (raw_description, category) pairs for ML training.
+        """Return (description, category) pairs for ML training.
 
-        Joins tx_history with merchant_categories to associate descriptions with categories.
+        Sources (in priority order):
+        1. User overrides — the gold-standard corrections by the user.
+        2. Transaction history — raw banking descriptions with their assigned category.
+        3. Merchant memory fallback — clean_name→category for old rows without raw descriptions.
         """
-        rows = self._conn.execute(
+        pairs: list[tuple[str, str]] = []
+        seen: set[str] = set()
+
+        # 1. User overrides (highest quality: the user explicitly corrected these)
+        for row in self._conn.execute(
+            "SELECT original_description, category FROM user_overrides WHERE category != ''"
+        ).fetchall():
+            desc, cat = row
+            if desc and cat and desc not in seen:
+                pairs.append((desc, cat))
+                seen.add(desc)
+
+        # 2. History rows that have a raw original_description
+        for row in self._conn.execute(
+            """
+            SELECT original_description, category
+            FROM tx_history
+            WHERE original_description != '' AND category != 'Uncategorized'
+            """
+        ).fetchall():
+            desc, cat = row
+            if desc and desc not in seen:
+                pairs.append((desc, cat))
+                seen.add(desc)
+
+        # 3. Fallback: old history rows without original_description — use clean_name
+        for row in self._conn.execute(
             """
             SELECT h.clean_name, m.category
             FROM tx_history h
             INNER JOIN merchant_categories m ON h.clean_name = m.clean_name
+            WHERE (h.original_description IS NULL OR h.original_description = '')
             """
-        ).fetchall()
-        return [(desc, cat) for desc, cat in rows]
+        ).fetchall():
+            desc, cat = row
+            if desc and cat and desc not in seen:
+                pairs.append((desc, cat))
+                seen.add(desc)
+
+        return pairs
 
     # ── LLM Feedback Overrides ───────────────────────────────────
 

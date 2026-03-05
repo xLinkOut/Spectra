@@ -369,7 +369,7 @@ async def api_upload(file: UploadFile = File(...)):
                 if settings.ai_provider == "local":
                     from spectra.local_categorizer import categorise_local
                     from spectra.ml_classifier import train_classifier
-                    ml_clf = train_classifier(training_data) if training_data else None
+                    ml_clf = train_classifier(training_data)
 
                     # Categorise one-by-one so we can stream real progress
                     results = []
@@ -377,7 +377,7 @@ async def api_upload(file: UploadFile = File(...)):
                         pct = 25 + int((i + 1) / len(flat) * 67)
                         yield evt(pct, f"Categorizing {i + 1} / {len(flat)}...")
                         await asyncio.sleep(0)
-                        r = categorise_local([row], [], merchant_db=merchant_db, ml_classifier=ml_clf)
+                        r = categorise_local([row], merchant_db=merchant_db, ml_classifier=ml_clf)
                         results.extend(r)
                     categorised.extend(results)
 

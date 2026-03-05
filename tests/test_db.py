@@ -74,3 +74,26 @@ class TestContextManager:
         with BookmarkDB(tmp_path / "ctx.db") as db:
             db.mark_seen("tx-001")
             assert db.is_seen("tx-001") is True
+
+
+class TestResetDatabase:
+    def test_reset_all_data_clears_tables(self, db: BookmarkDB) -> None:
+        db.mark_seen_batch(["tx-1", "tx-2"])
+        db.save_merchant_category("netflix", "Digital Subscriptions")
+        db.save_overrides({
+            "NETFLIX.COM": {"clean_name": "netflix", "category": "Digital Subscriptions"}
+        })
+        db.save_budget_limit("Digital Subscriptions", 100)
+
+        deleted = db.reset_all_data()
+
+        assert deleted["seen_transactions"] >= 2
+        assert deleted["merchant_categories"] >= 1
+        assert deleted["user_overrides"] >= 1
+        assert deleted["budget_limits"] >= 1
+        assert deleted["tx_history"] == 0
+
+        assert db.count() == 0
+        assert db.get_merchant_categories() == {}
+        assert db.get_overrides() == {}
+        assert db.get_budget_limits() == {}

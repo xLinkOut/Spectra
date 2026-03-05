@@ -230,6 +230,35 @@ class BookmarkDB:
         row = self._conn.execute("SELECT COUNT(*) FROM seen_transactions").fetchone()
         return row[0] if row else 0
 
+    def reset_all_data(self) -> dict[str, int]:
+        """Delete all user data from the local DB while keeping schema intact."""
+        tables = [
+            "tx_history",
+            "seen_transactions",
+            "merchant_categories",
+            "user_overrides",
+            "budget_limits",
+        ]
+
+        deleted_counts: dict[str, int] = {}
+        for table in tables:
+            row = self._conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+            deleted_counts[table] = int(row[0] if row else 0)
+
+        try:
+            self._conn.execute("BEGIN")
+            for table in tables:
+                self._conn.execute(f"DELETE FROM {table}")
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
+
+        # Reclaim free pages after mass delete.
+        self._conn.execute("VACUUM")
+        self._conn.commit()
+        return deleted_counts
+
     # ── Housekeeping ─────────────────────────────────────────────
 
     def close(self) -> None:

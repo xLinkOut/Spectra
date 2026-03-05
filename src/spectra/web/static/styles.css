@@ -556,6 +556,21 @@ td.amount.income {
     cursor: not-allowed;
 }
 
+.btn-danger {
+    background: var(--negative);
+    color: #FFFFFF;
+}
+
+.btn-danger:hover {
+    background: #C43737;
+    box-shadow: var(--shadow-sm);
+}
+
+.btn-danger:disabled {
+    background: var(--text-faint);
+    cursor: not-allowed;
+}
+
 /* ─── Settings ─────────────────────────────────────────────────── */
 
 .settings-group {
@@ -631,6 +646,10 @@ td.amount.income {
 .settings-badge.cloud {
     background: #E3F2FD;
     color: var(--accent);
+}
+
+.settings-danger-zone {
+    border-color: rgba(224, 62, 62, 0.25);
 }
 
 /* ─── Pagination ───────────────────────────────────────────────── */

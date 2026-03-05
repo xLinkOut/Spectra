@@ -255,6 +255,27 @@ async def api_settings():
     }
 
 
+@app.post("/api/settings/reset-db")
+async def api_reset_db(request: Request):
+    """Reset local SQLite data after explicit confirmation."""
+    body = await request.json()
+    if body.get("confirm") != "RESET":
+        return JSONResponse(
+            {"ok": False, "error": "Confirmation token missing"},
+            status_code=400,
+        )
+
+    with _get_db() as db:
+        deleted = db.reset_all_data()
+
+    logger.warning("Local DB reset requested from settings page: %s", deleted)
+    return {
+        "ok": True,
+        "message": "Local database reset completed",
+        "deleted": deleted,
+    }
+
+
 # ── API: Upload & Process ────────────────────────────────────────
 
 

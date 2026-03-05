@@ -69,6 +69,17 @@
         <button class="btn btn-secondary" onclick="exportCSV()">📥 Download CSV</button>
     </div>
 </div>
+
+<div class="settings-group settings-danger-zone">
+    <h3>Danger Zone</h3>
+    <div class="settings-row">
+        <div class="settings-label">
+            Reset Local Database
+            <small>Deletes transactions, dedup history, merchant mappings, overrides, and budgets</small>
+        </div>
+        <button class="btn btn-danger" id="resetDbBtn" onclick="resetDatabase()">🗑 Reset DB</button>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -134,6 +145,44 @@
             showToast(`Exported ${allTx.length} transactions`);
         } catch (err) {
             showToast('Export failed', 'error');
+        }
+    }
+
+    async function resetDatabase() {
+        const typed = window.prompt('Type RESET to permanently clear your local database.');
+        if (typed !== 'RESET') {
+            showToast('Reset cancelled', 'info');
+            return;
+        }
+
+        const btn = document.getElementById('resetDbBtn');
+        btn.disabled = true;
+        const oldLabel = btn.textContent;
+        btn.textContent = 'Resetting...';
+
+        try {
+            const res = await fetch('/api/settings/reset-db', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ confirm: 'RESET' }),
+            });
+
+            const data = await res.json();
+            if (!res.ok || !data.ok) {
+                showToast(data.error || 'Reset failed', 'error');
+                return;
+            }
+
+            showToast('Database reset complete');
+            await loadSettings();
+            setTimeout(() => {
+                window.location.href = '/transactions';
+            }, 600);
+        } catch (err) {
+            showToast('Reset failed', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = oldLabel;
         }
     }
 

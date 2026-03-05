@@ -44,11 +44,16 @@ Spectra takes a different approach: it works directly from standard exports (CSV
 
 ### Self-Hosted Local Web Dashboard
 
-A local dashboard at `http://localhost:8080` to:
-- upload CSV/PDF exports
-- preview and review categorizations
-- edit merchant/category when needed
-- export to CSV/Excel and/or sync to Google Sheets (optional)
+A full-featured local dashboard at `http://localhost:8080`:
+
+| Page | What it does |
+|---|---|
+| **Dashboard** | Income vs Expenses breakdown, monthly charts, category distribution |
+| **Transactions** | Searchable/sortable ledger with inline category editing |
+| **Upload** | Drag-and-drop CSV/PDF import with preview & confirmation |
+| **Budget** | Per-category monthly limits with live 🟢/🟡/🔴 status |
+| **Trends** | Month-over-month and year-over-year spending analysis |
+| **Settings** | View active configuration, reset local database (Danger Zone) |
 
 ### Three categorization modes
 
@@ -65,11 +70,11 @@ Configure via `AI_PROVIDER` in your `.env`:
   5. **ML Classifier (optional)** — Trained on *your* history (enable by installing `scikit-learn`)
   6. **Fallback** — Marks as "Uncategorized" for manual correction (Spectra learns next time)
 
-### Google Sheets dashboard (optional)
+### Google Sheets sync (optional)
 
-If enabled, Spectra can create/update:
+If enabled, Spectra can also push data to a Google Sheet:
 - **Dashboard** — Income vs Expenses, category breakdowns, recurring cash flow, budget status
-- **Budget** — Monthly limits with live 🟢/🟡/🔴 status
+- **Budget** — Monthly limits with live status indicators
 - **Transactions YYYY** — Color-coded ledger for each year
 - **Trends** — YoY comparisons and multi-year charts
 
@@ -180,7 +185,7 @@ You'll need these repo secrets:
 
 * **No bank connections**: Spectra never logs into your bank — you export and upload files manually
 * **Local-first pipeline**: parsing, normalization, deduplication, and (with `local`) categorization run locally
-* **SQLite storage**: local database stored in `data/spectra.db`
+* **SQLite storage**: local database stored in `data/spectra.db` — you can reset it anytime from the Settings page
 * **Cloud providers**: when using `openai`/`gemini`, Spectra sends a minimal payload (date + cleaned description + amount)
 
 ---

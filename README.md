@@ -17,7 +17,16 @@
 </p>
 
 <p align="center">
-  <img src="assets/dashboard.png" alt="Spectra Dashboard" width="1000" />
+  <img src="assets/Screenshot%202026-03-04%20alle%2016.22.41.png" alt="Spectra Dashboard Overview" width="1000" />
+</p>
+
+<p align="center">
+  <img src="assets/Screenshot%202026-03-04%20alle%2016.23.24.png" alt="Spectra Transactions Page" width="495" />
+  <img src="assets/Screenshot%202026-03-04%20alle%2016.23.42.png" alt="Spectra Budget Page" width="495" />
+</p>
+
+<p align="center">
+  <img src="assets/Screenshot%202026-03-04%20alle%2016.24.01.png" alt="Spectra Trends Page" width="1000" />
 </p>
 
 ---

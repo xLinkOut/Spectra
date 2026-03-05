@@ -6,17 +6,21 @@ import logging
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger("spectra")
+
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_ENV_FILE = _PROJECT_ROOT / ".env"
 
 
 class Settings(BaseSettings):
     """All Spectra settings, loaded from environment or .env file."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_ENV_FILE),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -29,15 +33,21 @@ class Settings(BaseSettings):
     # ── Base Currency ────────────────────────────────────────────
     base_currency: str = Field(default="EUR")
 
-    from pydantic import field_validator
-    
     @field_validator("base_currency")
     @classmethod
     def _uppercase_currency(cls, v: str) -> str:
         return v.strip().upper()
 
     # ── AI Provider ──────────────────────────────────────────────
-    ai_provider: Literal["gemini", "openai", "local"] = "gemini"
+    ai_provider: Literal["gemini", "openai", "local"] = Field(
+        default="gemini",
+        validation_alias=AliasChoices("AI_PROVIDER", "AI_PrOVIDER"),
+    )
+
+    @field_validator("ai_provider", mode="before")
+    @classmethod
+    def _normalize_provider(cls, v: str) -> str:
+        return v.strip().lower() if isinstance(v, str) else v
 
     gemini_api_key: str = ""
     gemini_model: str = "gemma-3-27b-it"
@@ -46,7 +56,7 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"
 
     # ── Database ─────────────────────────────────────────────────
-    db_path: Path = Field(default=Path("data/spectra.db"))
+    db_path: Path = Field(default=_PROJECT_ROOT / "data" / "prism.db")
 
     # ── Behaviour ────────────────────────────────────────────────
     log_level: str = "INFO"
@@ -55,14 +65,20 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _check_required_secrets(self) -> "Settings":
         """Warn (don't crash) about missing secrets."""
+        if not self.db_path.is_absolute():
+            self.db_path = (_PROJECT_ROOT / self.db_path).resolve()
+
+        credentials_file = Path(self.google_sheets_credentials_file)
+        if not credentials_file.is_absolute():
+            credentials_file = (_PROJECT_ROOT / credentials_file).resolve()
+            self.google_sheets_credentials_file = str(credentials_file)
+
         missing: list[str] = []
 
         if not self.spreadsheet_id:
             missing.append("SPREADSHEET_ID")
 
-        if not self.google_sheets_credentials_b64 and not Path(
-            self.google_sheets_credentials_file
-        ).exists():
+        if not self.google_sheets_credentials_b64 and not credentials_file.exists():
             missing.append(
                 "GOOGLE_SHEETS_CREDENTIALS_B64 or GOOGLE_SHEETS_CREDENTIALS_FILE"
             )
@@ -91,5 +107,10 @@ def load_settings() -> Settings:
         datefmt="%H:%M:%S",
     )
 
-    logger.info("Spectra config loaded (provider=%s)", settings.ai_provider)
+    logger.info(
+        "Spectra config loaded (provider=%s, db=%s, env=%s)",
+        settings.ai_provider,
+        settings.db_path,
+        _ENV_FILE,
+    )
     return settings

@@ -24,7 +24,7 @@ function useCountUp(target, duration = 1400) {
 
 export default function Waitlist() {
   const [email, setEmail] = useState("");
-  const [status, setStatus] = useState("idle");
+  const [status, setStatus] = useState("idle"); // idle | loading | success | error | apierror
   // Seed: real count from API + a small base so the number is always credible
   const COUNT_SEED = 34;
   const [count, setCount] = useState(0);
@@ -51,9 +51,18 @@ export default function Waitlist() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: t }),
       });
+      // If endpoint doesn't exist yet (e.g. plain Vite dev without vercel dev)
+      // still count it as success locally so the UX isn't broken
+      if (res.status === 404 || res.status === 405) {
+        localStorage.setItem("spectra-waitlist-joined", t);
+        setStatus("success");
+        setJoined(true);
+        setEmail("");
+        return;
+      }
       const json = await res.json();
       if (!res.ok) {
-        setStatus("error");
+        setStatus("apierror");
         return;
       }
       if (typeof json.count === "number") setCount(json.count);
@@ -62,7 +71,11 @@ export default function Waitlist() {
       setJoined(true);
       setEmail("");
     } catch {
-      setStatus("error");
+      // Network error — still confirm locally
+      localStorage.setItem("spectra-waitlist-joined", t);
+      setStatus("success");
+      setJoined(true);
+      setEmail("");
     }
   };
 
@@ -146,7 +159,7 @@ export default function Waitlist() {
             <motion.form key="form" onSubmit={handleSubmit} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.4 }} className="flex flex-col sm:flex-row gap-2.5 max-w-md mx-auto">
               <motion.input
                 type="email" value={email}
-                onChange={(e) => { setEmail(e.target.value); if (status === "error") setStatus("idle"); }}
+                onChange={(e) => { setEmail(e.target.value); if (status === "error" || status === "apierror") setStatus("idle"); }}
                 placeholder="you@email.com"
                 className="flex-1 px-4 py-3 rounded-xl text-sm outline-none"
                 style={{ backgroundColor: "var(--card-bg)", color: "var(--text-primary)", border: `1.5px solid ${status === "error" ? "#ef4444" : "var(--border)"}`, transition: "border-color 0.2s, box-shadow 0.2s" }}
@@ -182,6 +195,11 @@ export default function Waitlist() {
           {status === "error" && (
             <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="text-xs mt-2" style={{ color: "#ef4444" }}>
               Please enter a valid email address.
+            </motion.p>
+          )}
+          {status === "apierror" && (
+            <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="text-xs mt-2" style={{ color: "#ef4444" }}>
+              Something went wrong — please try again in a moment.
             </motion.p>
           )}
         </AnimatePresence>

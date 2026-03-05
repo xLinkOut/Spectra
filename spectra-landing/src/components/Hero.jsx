@@ -13,10 +13,11 @@ const stats = [
 ];
 
 const LOCAL_SHOTS = [
-  { src: "/local-1.png", title: "Dashboard", subtitle: "Overview + insights" },
-  { src: "/local-2.png", title: "Transactions", subtitle: "Movimenti locali" },
-  { src: "/local-3.png", title: "Trends", subtitle: "Trend & recurring" },
-  { src: "/local-4.png", title: "Settings", subtitle: "Config + rules" },
+  { src: "/local-1.png", title: "Upload", subtitle: "Verify & confirm before saving" },
+  { src: "/local-2.png", title: "Transactions", subtitle: "All movements in one place" },
+  { src: "/local-3.png", title: "Dashboard", subtitle: "Overview & insights" },
+  { src: "/local-4.png", title: "Budget", subtitle: "Limits and monthly tracking" },
+  { src: "/local-5.png", title: "Trends", subtitle: "Spending trends over time" },
 ];
 
 const shotVariants = {

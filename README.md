@@ -9,11 +9,11 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/python-3.10+-blue" alt="Python" />
+  <img src="https://img.shields.io/badge/python-3.11+-blue" alt="Python" />
   <img src="https://img.shields.io/badge/license-AGPL--3.0-lightgrey" alt="License" />
   <img src="https://img.shields.io/badge/status-active-success" alt="Status" />
   <img src="https://img.shields.io/badge/categorization-openai%20%7C%20gemini%20%7C%20local-blueviolet" alt="Categorization Providers" />
-  <img src="https://img.shields.io/github/stars/francescogabrieli/Prism?style=social" alt="GitHub stars" />
+  <img src="https://img.shields.io/github/stars/francescogabrieli/Spectra?style=social" alt="GitHub stars" />
 </p>
 
 <p align="center">
@@ -103,8 +103,9 @@ If enabled, Spectra can also push data to a Google Sheet:
 git clone https://github.com/francescogabrieli/Spectra.git
 cd Spectra
 python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+source .venv/bin/activate      # Mac/Linux
+# .venv\Scripts\activate       # Windows
+pip install -e .
 ```
 
 ### 2) Configure `.env`

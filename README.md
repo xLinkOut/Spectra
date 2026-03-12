@@ -59,10 +59,10 @@ A full-featured local dashboard at `http://localhost:8080`:
 |---|---|
 | **Dashboard** | Income vs Expenses breakdown, monthly charts, category distribution |
 | **Transactions** | Searchable/sortable ledger with inline category editing |
-| **Upload** | Drag-and-drop CSV/PDF import with preview & confirmation |
+| **Upload** | Drag-and-drop CSV/PDF import with editable preview, batch review, and future-learning toggle |
 | **Budget** | Per-category monthly limits with live 🟢/🟡/🔴 status |
 | **Trends** | Month-over-month and year-over-year spending analysis |
-| **Settings** | View active configuration, reset local database (Danger Zone) |
+| **Settings** | Rules engine, learning center, active configuration, and local reset tools |
 
 ### Three categorization modes
 
@@ -90,6 +90,9 @@ If enabled, Spectra can also push data to a Google Sheet:
 - **Universal import** — Auto-detects delimiters, bank layouts, EU number formats (`1.234,56`), multi-line descriptions
 - **Multi-currency FX** — Historical ECB rates via [Frankfurter API](https://www.frankfurter.app/) (no API key)
 - **Recurring detection** — Pattern matching + historical spacing to flag subscriptions/salary
+- **Human-in-the-loop review** — Edit merchants/categories before import, propagate fixes across similar rows, and decide whether Spectra should learn them for future uploads
+- **Rules + learning loop** — Deterministic contains/regex rules, recent feedback history, and retroactive re-application on historical transactions
+- **Actionable insights** — Burn-rate risk, subscription price changes, anomalies, and cycle-over-cycle change detection surfaced in the dashboard
 - **Idempotent** — Transaction hashes in SQLite prevent duplicate imports
 - **Automation-ready** — Can run on a schedule (cron / GitHub Actions)
 
@@ -193,7 +196,7 @@ You'll need these repo secrets:
 
 * **No bank connections**: Spectra never logs into your bank — you export and upload files manually
 * **Local-first pipeline**: parsing, normalization, deduplication, and (with `local`) categorization run locally
-* **SQLite storage**: local database stored in `data/spectra.db` — you can reset it anytime from the Settings page
+* **SQLite storage**: local database stored in `data/prism.db` by default — you can reset it anytime from the Settings page
 * **Cloud providers**: when using `openai`/`gemini`, Spectra sends a minimal payload (date + cleaned description + amount)
 
 ---

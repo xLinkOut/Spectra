@@ -38,6 +38,14 @@
     <div class="burn-rate-meta" id="burnRateMeta">—</div>
 </div>
 
+<div class="insights-panel" id="insightsPanel" style="display:none;">
+    <div class="insights-panel-header">
+        <h3>Actionable Signals</h3>
+        <span class="table-cell-muted">What changed, what needs attention, and what may be worth reviewing next</span>
+    </div>
+    <div class="insights-list" id="insightsList"></div>
+</div>
+
 <div class="charts-row">
     <div class="chart-box">
         <h3>Spending by Category</h3>
@@ -249,6 +257,29 @@
         meta.textContent = `${formatCurrency(burn.daily_spend)}/day · ${burn.elapsed_days}/${burn.total_days} days elapsed · ${burn.remaining_days} days left`;
     }
 
+    function renderInsights(data) {
+        const panel = document.getElementById('insightsPanel');
+        const list = document.getElementById('insightsList');
+        if (!panel || !list) {
+            return;
+        }
+
+        const insights = Array.isArray(data.insights) ? data.insights : [];
+        if (!insights.length) {
+            panel.style.display = 'none';
+            list.innerHTML = '';
+            return;
+        }
+
+        panel.style.display = 'block';
+        list.innerHTML = insights.map(item => `
+            <a class="insight-card insight-${item.severity || 'info'}" href="${item.href || '#'}">
+                <div class="insight-title">${item.title}</div>
+                <div class="insight-detail">${item.detail}</div>
+            </a>
+        `).join('');
+    }
+
     async function loadDashboard(scope = getScope()) {
         try {
             const normalizedScope = normalizeScope(scope);
@@ -266,6 +297,7 @@
 
             document.getElementById('subtitle').textContent = data.scope_label || data.current_cycle?.label || 'Selected period';
             renderBurnRate(data);
+            renderInsights(data);
 
             if (!data.has_data) {
                 document.getElementById('subtitle').textContent = 'No data yet';

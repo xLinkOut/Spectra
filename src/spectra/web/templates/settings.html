@@ -60,11 +60,12 @@
 </div>
 
 <div class="settings-group">
-    <h3>Categorization Rules</h3>
+    <h3>Your Custom Rules</h3>
+    <p class="page-subtitle" style="margin: -8px 0 16px;">Custom rules take priority over Spectra's automatic categorization. Spectra already works without them — add rules here to override or refine specific merchants.</p>
     <div class="settings-row">
         <div class="settings-label">
-            Rules Engine
-            <small>Apply deterministic rules before AI/local categorization (contains or regex)</small>
+            New Rule
+            <small>Match by keyword or regex, then assign a category. Applied before built-in intelligence.</small>
         </div>
         <div class="settings-control-group rules-builder">
             <select id="ruleType" class="settings-select">
@@ -77,9 +78,62 @@
             <button class="btn btn-primary btn-sm" type="button" onclick="createRule()">Add rule</button>
         </div>
     </div>
+    <div class="settings-row">
+        <div class="settings-label">
+            Rules Summary
+            <small>Toggle active status, change priority, and preview historical impact before saving.</small>
+        </div>
+        <div class="settings-control-group">
+            <span class="settings-badge" id="rulesSummaryBadge">—</span>
+        </div>
+    </div>
+    <div class="settings-inline-panel">
+        <div class="settings-inline-panel-header">Test current builder</div>
+        <div class="settings-control-group rules-builder" style="margin-top:0;">
+            <input type="text" id="ruleSampleText" class="settings-input" placeholder="Sample transaction text to test" />
+            <button class="btn btn-secondary btn-sm" type="button" onclick="testRule()">Test rule</button>
+        </div>
+        <div class="table-cell-muted" id="ruleTestResult">Add a rule or sample text to preview its impact.</div>
+    </div>
     <div id="rulesList" class="rules-list">
         <div class="empty-state" style="padding: 18px; margin-top: 8px;">
             <p>Loading rules...</p>
+        </div>
+    </div>
+</div>
+
+<div class="settings-group">
+    <h3>Learning Center</h3>
+    <div class="settings-row">
+        <div class="settings-label">
+            Feedback Loop
+            <small>Recent manual corrections are stored here. Re-apply them to historical data when rules or overrides evolve.</small>
+        </div>
+        <div class="settings-control-group">
+            <button class="btn btn-secondary btn-sm" type="button" onclick="reapplyLearning()">Reapply to history</button>
+        </div>
+    </div>
+    <div class="settings-stats-grid">
+        <div class="settings-stat-card">
+            <span class="settings-stat-label">Feedback events</span>
+            <strong id="feedbackCount">—</strong>
+        </div>
+        <div class="settings-stat-card">
+            <span class="settings-stat-label">Future-learning events</span>
+            <strong id="futureLearningCount">—</strong>
+        </div>
+        <div class="settings-stat-card">
+            <span class="settings-stat-label">Overrides</span>
+            <strong id="overrideCount">—</strong>
+        </div>
+        <div class="settings-stat-card">
+            <span class="settings-stat-label">Uncategorized left</span>
+            <strong id="learningUncategorizedCount">—</strong>
+        </div>
+    </div>
+    <div id="learningList" class="rules-list">
+        <div class="empty-state" style="padding: 18px; margin-top: 8px;">
+            <p>Loading learning events...</p>
         </div>
     </div>
 </div>
@@ -136,6 +190,13 @@
         </div>
         <div class="settings-value" id="categoryCount">—</div>
     </div>
+    <div class="settings-row">
+        <div class="settings-label">
+            Active Rules
+            <small>Rules currently active in the deterministic engine</small>
+        </div>
+        <div class="settings-value" id="activeRuleCount">—</div>
+    </div>
 </div>
 
 <div class="settings-group">
@@ -164,6 +225,15 @@
 {% block scripts %}
 <script>
     let settingsCategories = [];
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#39;');
+    }
 
     function ordSuffix(d) {
         if (d >= 11 && d <= 13) return 'th';
@@ -302,10 +372,17 @@
 
     function renderRules(rules) {
         const container = document.getElementById('rulesList');
+        const summaryBadge = document.getElementById('rulesSummaryBadge');
+        if (summaryBadge) {
+            const active = (rules || []).filter(rule => rule.is_active).length;
+            summaryBadge.textContent = `${active}/${(rules || []).length} active`;
+            summaryBadge.className = `settings-badge ${active ? 'local' : ''}`;
+        }
+
         if (!rules || rules.length === 0) {
             container.innerHTML = `
                 <div class="empty-state" style="padding: 18px; margin-top: 8px;">
-                    <p>No rules yet. Add one to auto-categorize recurring merchants.</p>
+                    <p>No custom rules yet — Spectra already categorizes transactions automatically using built-in intelligence. Add a rule above to override or refine any category.</p>
                 </div>
             `;
             return;
@@ -313,10 +390,19 @@
 
         const rows = rules.map(rule => `
             <tr>
+                <td>#${rule.priority}</td>
+                <td>
+                    <label class="mini-checkbox">
+                        <input type="checkbox" ${rule.is_active ? 'checked' : ''} onchange="toggleRuleActive(${rule.id}, this.checked)">
+                        <span>${rule.is_active ? 'On' : 'Off'}</span>
+                    </label>
+                </td>
                 <td><code>${rule.rule_type}</code></td>
-                <td><code>${rule.pattern}</code></td>
+                <td><code>${escapeHtml(rule.pattern)}</code></td>
                 <td>${rule.category}</td>
                 <td style="text-align:right;">
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="moveRule(${rule.id}, 'up')">↑</button>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="moveRule(${rule.id}, 'down')">↓</button>
                     <button class="btn btn-secondary btn-sm" onclick="deleteRule(${rule.id})">Delete</button>
                 </td>
             </tr>
@@ -326,6 +412,8 @@
             <table>
                 <thead>
                     <tr>
+                        <th>Priority</th>
+                        <th>Active</th>
                         <th>Type</th>
                         <th>Pattern</th>
                         <th>Category</th>
@@ -341,6 +429,38 @@
         const res = await fetch('/api/settings/rules');
         const data = await res.json();
         renderRules(data.rules || []);
+    }
+
+    async function toggleRuleActive(ruleId, nextState) {
+        const res = await fetch(`/api/settings/rules/${ruleId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_active: nextState }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+            showToast(data.error || 'Rule update failed', 'error');
+            await loadRules();
+            return;
+        }
+
+        showToast(`Rule ${nextState ? 'enabled' : 'disabled'}`, 'info');
+        await loadRules();
+    }
+
+    async function moveRule(ruleId, direction) {
+        const res = await fetch(`/api/settings/rules/${ruleId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ move: direction }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+            showToast(data.error || 'Rule reorder failed', 'error');
+            return;
+        }
+
+        await loadRules();
     }
 
     async function createRule() {
@@ -385,6 +505,103 @@
 
         showToast('Rule deleted', 'info');
         await loadRules();
+    }
+
+    async function testRule() {
+        const ruleType = document.getElementById('ruleType').value;
+        const pattern = document.getElementById('rulePattern').value.trim();
+        const sampleText = document.getElementById('ruleSampleText').value.trim();
+        const output = document.getElementById('ruleTestResult');
+
+        if (!pattern) {
+            output.textContent = 'Enter a pattern first.';
+            return;
+        }
+
+        const res = await fetch('/api/settings/rules/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rule_type: ruleType, pattern, sample_text: sampleText }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+            output.textContent = data.error || 'Rule test failed';
+            showToast(data.error || 'Rule test failed', 'error');
+            return;
+        }
+
+        const exampleHtml = (data.examples || []).map(example =>
+            `<div><strong>${escapeHtml(example.merchant)}</strong> · ${escapeHtml(example.current_category)} · ${escapeHtml(example.date)}</div>`
+        ).join('');
+        output.innerHTML = `
+            <div><strong>Sample match:</strong> ${data.matches_sample ? 'Yes' : 'No'}</div>
+            <div><strong>Historical impact:</strong> ${data.impact_count} transaction(s)</div>
+            ${exampleHtml ? `<div class="rule-test-examples">${exampleHtml}</div>` : ''}
+        `;
+    }
+
+    function renderLearning(events) {
+        const container = document.getElementById('learningList');
+        if (!events || events.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state" style="padding: 18px; margin-top: 8px;">
+                    <p>No learning feedback recorded yet.</p>
+                </div>
+            `;
+            return;
+        }
+
+        const rows = events.map(event => `
+            <tr>
+                <td>${escapeHtml(event.created_at.replace('T', ' ').slice(0, 16))}</td>
+                <td>${escapeHtml(event.clean_name)}</td>
+                <td>${escapeHtml(event.category)}</td>
+                <td>${escapeHtml(event.source)}</td>
+                <td>${event.apply_to_future ? '<span class="settings-badge local">Future</span>' : '<span class="settings-badge">Only this time</span>'}</td>
+            </tr>
+        `).join('');
+
+        container.innerHTML = `
+            <table>
+                <thead>
+                    <tr>
+                        <th>When</th>
+                        <th>Merchant</th>
+                        <th>Category</th>
+                        <th>Source</th>
+                        <th>Scope</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    }
+
+    async function loadLearning() {
+        const res = await fetch('/api/settings/learning');
+        const data = await res.json();
+        if (!res.ok) {
+            showToast(data.error || 'Learning summary failed', 'error');
+            return;
+        }
+
+        renderLearning(data.events || []);
+        document.getElementById('feedbackCount').textContent = (data.summary?.feedback_count || 0).toLocaleString();
+        document.getElementById('futureLearningCount').textContent = (data.summary?.learned_future_count || 0).toLocaleString();
+        document.getElementById('overrideCount').textContent = (data.summary?.override_count || 0).toLocaleString();
+        document.getElementById('learningUncategorizedCount').textContent = (data.summary?.uncategorized_count || 0).toLocaleString();
+    }
+
+    async function reapplyLearning() {
+        const res = await fetch('/api/settings/learning/reapply', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+            showToast(data.error || 'Reapply failed', 'error');
+            return;
+        }
+
+        showToast(`Updated ${data.updated} historical transaction(s)`);
+        await Promise.all([loadLearning(), loadSettings(), loadRules()]);
     }
 
     function syncCategoryHints() {
@@ -435,6 +652,7 @@
             document.getElementById('txCount').textContent = s.tx_count.toLocaleString();
             document.getElementById('merchantCount').textContent = s.merchant_count.toLocaleString();
             document.getElementById('categoryCount').textContent = s.category_count.toLocaleString();
+            document.getElementById('activeRuleCount').textContent = (s.active_rule_count || 0).toLocaleString();
         } catch (err) {
             console.error('Settings load error:', err);
         }
@@ -518,6 +736,7 @@
     initThemePreference();
     loadCategoryHints();
     loadRules();
+    loadLearning();
     loadSettings();
 </script>
 {% endblock %}

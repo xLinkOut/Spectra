@@ -62,7 +62,7 @@
 
         applyTheme(getThemePreference());
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=20260308c">
+    <link rel="stylesheet" href="/static/styles.css?v=20260312a">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 
@@ -162,7 +162,9 @@
     </aside>
 
     <main class="main">
-        {% block content %}{% endblock %}
+        <div class="main-inner">
+            {% block content %}{% endblock %}
+        </div>
     </main>
 
     <div class="toast-container" id="toastContainer"></div>

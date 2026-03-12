@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS tx_history (
     date        TEXT NOT NULL,
     clean_name  TEXT NOT NULL,
     amount      REAL NOT NULL,
-    category    TEXT NOT NULL DEFAULT 'Uncategorized'
+    category    TEXT NOT NULL DEFAULT 'Uncategorized',
+    original_description TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS user_overrides (
@@ -52,6 +53,17 @@ CREATE TABLE IF NOT EXISTS category_rules (
     priority    INTEGER NOT NULL DEFAULT 100,
     is_active   INTEGER NOT NULL DEFAULT 1,
     created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS learning_feedback (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    tx_id               TEXT,
+    original_description TEXT NOT NULL DEFAULT '',
+    clean_name          TEXT NOT NULL,
+    category            TEXT NOT NULL,
+    source              TEXT NOT NULL,
+    apply_to_future     INTEGER NOT NULL DEFAULT 1,
+    created_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 """
 
@@ -104,6 +116,18 @@ class BookmarkDB:
                 priority   INTEGER NOT NULL DEFAULT 100,
                 is_active  INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS learning_feedback (
+                id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+                tx_id                TEXT,
+                original_description TEXT NOT NULL DEFAULT '',
+                clean_name           TEXT NOT NULL,
+                category             TEXT NOT NULL,
+                source               TEXT NOT NULL,
+                apply_to_future      INTEGER NOT NULL DEFAULT 1,
+                created_at           TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
         """)
         self._conn.commit()
@@ -260,6 +284,28 @@ class BookmarkDB:
             for rule_id, rule_type, pattern, category, priority, is_active in rows
         ]
 
+    def get_category_rule(self, rule_id: int) -> dict[str, object] | None:
+        """Return a single category rule by id."""
+        row = self._conn.execute(
+            """
+            SELECT id, rule_type, pattern, category, priority, is_active
+            FROM category_rules
+            WHERE id = ?
+            """,
+            (int(rule_id),),
+        ).fetchone()
+        if not row:
+            return None
+
+        return {
+            "id": int(row[0]),
+            "rule_type": str(row[1]),
+            "pattern": str(row[2]),
+            "category": str(row[3]),
+            "priority": int(row[4]),
+            "is_active": bool(row[5]),
+        }
+
     def add_category_rule(self, rule_type: str, pattern: str, category: str) -> dict[str, object]:
         """Insert a new category rule and return it."""
         next_priority_row = self._conn.execute(
@@ -284,10 +330,76 @@ class BookmarkDB:
             "is_active": True,
         }
 
+    def _normalize_rule_priorities(self) -> None:
+        """Keep priorities contiguous after mutations."""
+        rows = self._conn.execute(
+            "SELECT id FROM category_rules ORDER BY priority ASC, id ASC"
+        ).fetchall()
+        for index, (rule_id,) in enumerate(rows, start=1):
+            self._conn.execute(
+                "UPDATE category_rules SET priority = ? WHERE id = ?",
+                (index, int(rule_id)),
+            )
+        self._conn.commit()
+
+    def move_category_rule(self, rule_id: int, direction: str) -> list[dict[str, object]]:
+        """Move a category rule one step up or down in priority order."""
+        normalized_direction = str(direction or "").strip().lower()
+        if normalized_direction not in {"up", "down"}:
+            raise ValueError("direction must be 'up' or 'down'")
+
+        rules = self.get_category_rules()
+        idx = next((i for i, rule in enumerate(rules) if int(rule["id"]) == int(rule_id)), None)
+        if idx is None:
+            raise KeyError(rule_id)
+
+        target_idx = idx - 1 if normalized_direction == "up" else idx + 1
+        if target_idx < 0 or target_idx >= len(rules):
+            return rules
+
+        rules[idx], rules[target_idx] = rules[target_idx], rules[idx]
+        for priority, rule in enumerate(rules, start=1):
+            self._conn.execute(
+                "UPDATE category_rules SET priority = ? WHERE id = ?",
+                (priority, int(rule["id"])),
+            )
+        self._conn.commit()
+        return self.get_category_rules()
+
+    def update_category_rule(
+        self,
+        rule_id: int,
+        *,
+        is_active: bool | None = None,
+    ) -> dict[str, object] | None:
+        """Update mutable category rule fields and return the fresh row."""
+        updates: list[str] = []
+        params: list[object] = []
+
+        if is_active is not None:
+            updates.append("is_active = ?")
+            params.append(1 if is_active else 0)
+
+        if not updates:
+            return self.get_category_rule(rule_id)
+
+        params.append(int(rule_id))
+        cur = self._conn.execute(
+            f"UPDATE category_rules SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+        self._conn.commit()
+        if cur.rowcount <= 0:
+            return None
+        self._normalize_rule_priorities()
+        return self.get_category_rule(rule_id)
+
     def delete_category_rule(self, rule_id: int) -> bool:
         """Delete a category rule by id. Returns True if deleted."""
         cur = self._conn.execute("DELETE FROM category_rules WHERE id = ?", (int(rule_id),))
         self._conn.commit()
+        if cur.rowcount > 0:
+            self._normalize_rule_priorities()
         return cur.rowcount > 0
 
     def get_training_data(self) -> list[tuple[str, str]]:
@@ -374,6 +486,132 @@ class BookmarkDB:
             for orig_desc, cat, name in rows
         }
 
+    def record_learning_feedback(
+        self,
+        *,
+        tx_id: str | None,
+        original_description: str,
+        clean_name: str,
+        category: str,
+        source: str,
+        apply_to_future: bool,
+    ) -> int:
+        """Persist a user learning event for auditability and later review."""
+        cur = self._conn.execute(
+            """
+            INSERT INTO learning_feedback (
+                tx_id,
+                original_description,
+                clean_name,
+                category,
+                source,
+                apply_to_future
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                tx_id,
+                original_description,
+                clean_name,
+                category,
+                source,
+                1 if apply_to_future else 0,
+            ),
+        )
+        self._conn.commit()
+        return int(cur.lastrowid)
+
+    def get_recent_learning_feedback(self, limit: int = 40) -> list[dict[str, object]]:
+        """Return the most recent user learning events."""
+        rows = self._conn.execute(
+            """
+            SELECT id, tx_id, original_description, clean_name, category, source, apply_to_future, created_at
+            FROM learning_feedback
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (max(1, int(limit)),),
+        ).fetchall()
+        return [
+            {
+                "id": int(row_id),
+                "tx_id": tx_id,
+                "original_description": str(original_description),
+                "clean_name": str(clean_name),
+                "category": str(category),
+                "source": str(source),
+                "apply_to_future": bool(apply_to_future),
+                "created_at": str(created_at),
+            }
+            for row_id, tx_id, original_description, clean_name, category, source, apply_to_future, created_at in rows
+        ]
+
+    def reapply_learning_to_history(self) -> dict[str, int]:
+        """Re-apply overrides, rules, and merchant mappings to historical rows."""
+        from spectra.rules import first_matching_rule
+
+        overrides = self.get_overrides()
+        rules = self.get_category_rules()
+        merchant_categories = self.get_merchant_categories()
+        rows = self._conn.execute(
+            """
+            SELECT tx_id, original_description, clean_name, category
+            FROM tx_history
+            ORDER BY date ASC, tx_id ASC
+            """
+        ).fetchall()
+
+        updated = 0
+        override_updates = 0
+        rule_updates = 0
+        merchant_updates = 0
+
+        for tx_id, original_description, clean_name, current_category in rows:
+            next_name = str(clean_name)
+            next_category = str(current_category)
+            applied_source = ""
+
+            override = overrides.get(str(original_description or ""))
+            if override:
+                next_name = str(override.get("clean_name") or next_name)
+                next_category = str(override.get("category") or next_category)
+                applied_source = "override"
+            else:
+                matched_rule = first_matching_rule(
+                    rules,
+                    clean_name=str(clean_name),
+                    raw_description=str(original_description or clean_name),
+                )
+                if matched_rule:
+                    next_category = str(matched_rule["category"])
+                    applied_source = "rule"
+                elif str(clean_name) in merchant_categories:
+                    next_category = str(merchant_categories[str(clean_name)])
+                    applied_source = "merchant"
+
+            if next_name == str(clean_name) and next_category == str(current_category):
+                continue
+
+            self._conn.execute(
+                "UPDATE tx_history SET clean_name = ?, category = ? WHERE tx_id = ?",
+                (next_name, next_category, str(tx_id)),
+            )
+            updated += 1
+            if applied_source == "override":
+                override_updates += 1
+            elif applied_source == "rule":
+                rule_updates += 1
+            elif applied_source == "merchant":
+                merchant_updates += 1
+
+        self._conn.commit()
+        return {
+            "updated": updated,
+            "override_updates": override_updates,
+            "rule_updates": rule_updates,
+            "merchant_updates": merchant_updates,
+        }
+
     def count(self) -> int:
         """Return total number of seen transactions."""
         row = self._conn.execute("SELECT COUNT(*) FROM seen_transactions").fetchone()
@@ -387,6 +625,7 @@ class BookmarkDB:
             "merchant_categories",
             "user_overrides",
             "budget_limits",
+            "learning_feedback",
         ]
 
         deleted_counts: dict[str, int] = {}

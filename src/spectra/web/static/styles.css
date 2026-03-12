@@ -256,9 +256,15 @@ body {
 .main {
     margin-left: var(--sidebar-w);
     flex: 1;
+    width: calc(100vw - var(--sidebar-w));
     padding: 40px 56px;
-    max-width: 1200px;
+    max-width: none;
     animation: pageIn 0.35s ease;
+}
+
+.main-inner {
+    width: min(1200px, 100%);
+    margin: 0 auto;
 }
 
 @keyframes pageIn {
@@ -335,6 +341,69 @@ body {
     margin-top: 4px;
     font-size: 12px;
     color: var(--text-muted);
+}
+
+.insights-panel {
+    margin: -6px 0 26px;
+    padding: 18px;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+}
+
+.insights-panel-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.insights-panel-header h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.insights-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+}
+
+.insight-card {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: var(--radius);
+    background: var(--bg-subtle);
+    padding: 14px 14px 14px 16px;
+    transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+}
+
+.insight-card:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+}
+
+.insight-card.insight-warning {
+    border-left-color: var(--warning);
+}
+
+.insight-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.insight-detail {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.45;
 }
 
 /* ─── Cards Grid ───────────────────────────────────────────────── */
@@ -903,6 +972,51 @@ td.amount.income {
     justify-content: flex-end;
 }
 
+.settings-inline-panel {
+    margin: 6px 0 16px;
+    padding: 14px 16px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    background: var(--bg-subtle);
+}
+
+.settings-inline-panel-header {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 10px;
+}
+
+.settings-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin: 8px 0 16px;
+}
+
+.settings-stat-card {
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    background: var(--bg-subtle);
+    padding: 14px;
+}
+
+.settings-stat-card strong {
+    display: block;
+    margin-top: 6px;
+    font-size: 20px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+}
+
+.settings-stat-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
 .rules-list code {
     font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
     background: var(--bg-subtle);
@@ -1029,8 +1143,62 @@ td.amount.income {
     color: var(--badge-theme-dark-text);
 }
 
+.settings-badge.warning {
+    background: var(--badge-warning-bg);
+    color: var(--badge-warning-text);
+}
+
 .settings-danger-zone {
     border-color: rgba(224, 62, 62, 0.25);
+}
+
+.mini-checkbox {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+.mini-checkbox input {
+    accent-color: var(--accent);
+}
+
+.inline-banner {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--border-light);
+    background: var(--bg-subtle);
+    border-radius: var(--radius);
+    margin-bottom: 14px;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.inline-banner strong {
+    color: var(--text);
+    white-space: nowrap;
+}
+
+.preview-input,
+.preview-select {
+    min-width: 160px;
+    width: 100%;
+}
+
+.preview-raw {
+    margin-top: 6px;
+    max-width: 320px;
+}
+
+.rule-test-examples {
+    margin-top: 8px;
+    display: grid;
+    gap: 4px;
 }
 
 /* ─── Pagination ───────────────────────────────────────────────── */
@@ -1586,6 +1754,7 @@ td.amount.income {
 
     .main {
         margin-left: 0;
+        width: 100%;
         padding: 24px 20px;
         padding-top: 56px;
     }

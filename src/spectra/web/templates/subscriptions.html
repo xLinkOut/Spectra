@@ -22,7 +22,13 @@
         <div class="card-label">This Cycle</div>
         <div class="card-value neutral" id="subsCycle">—</div>
     </div>
+    <div class="card">
+        <div class="card-label">Price Changes</div>
+        <div class="card-value warning" id="subsChanges">—</div>
+    </div>
 </div>
+
+<div class="inline-banner" id="subscriptionSignals" style="display:none;"></div>
 
 <div class="table-container">
     <div id="subscriptionsTableBody">
@@ -110,6 +116,7 @@
                 </td>
                 <td>${formatSpectraDate(item.last_charge_date)}</td>
                 <td>${formatSpectraDate(item.next_estimated_date)}</td>
+                <td>${renderChangeBadge(item)}</td>
                 <td style="text-align:right">${formatCurrency(item.monthly_estimate)}</td>
                 <td style="text-align:right">${formatCurrency(item.in_current_cycle)}</td>
             </tr>
@@ -123,6 +130,7 @@
                         <th class="sortable" onclick="toggleSort('cadence_days')">Cadence <span class="sort-indicator">${sortIndicator('cadence_days')}</span></th>
                         <th class="sortable" onclick="toggleSort('last_charge_date')">Last Charge <span class="sort-indicator">${sortIndicator('last_charge_date')}</span></th>
                         <th class="sortable" onclick="toggleSort('next_estimated_date')">Next Est. <span class="sort-indicator">${sortIndicator('next_estimated_date')}</span></th>
+                        <th>Change</th>
                         <th class="sortable" style="text-align:right" onclick="toggleSort('monthly_estimate')">Monthly <span class="sort-indicator">${sortIndicator('monthly_estimate')}</span></th>
                         <th class="sortable" style="text-align:right" onclick="toggleSort('in_current_cycle')">Cycle <span class="sort-indicator">${sortIndicator('in_current_cycle')}</span></th>
                     </tr>
@@ -130,6 +138,16 @@
                 <tbody>${rows}</tbody>
             </table>
         `;
+    }
+
+    function renderChangeBadge(item) {
+        if (!item.price_change_direction) {
+            return '<span class="table-cell-muted">Stable</span>';
+        }
+
+        const sign = item.change_amount > 0 ? '+' : '';
+        const cls = item.price_change_direction === 'up' ? 'warning' : 'local';
+        return `<span class="settings-badge ${cls}">${sign}${formatCurrency(item.change_amount)} · ${sign}${item.change_pct}%</span>`;
     }
 
     async function loadSubscriptions() {
@@ -141,7 +159,17 @@
             document.getElementById('subsMonthly').textContent = formatCurrency(data.summary.monthly_estimate);
             document.getElementById('subsAnnual').textContent = formatCurrency(data.summary.annual_projection);
             document.getElementById('subsCycle').textContent = formatCurrency(data.summary.in_current_cycle);
+            document.getElementById('subsChanges').textContent = data.summary.price_change_count;
             document.getElementById('subscriptionsSubtitle').textContent = data.current_cycle?.label || 'Current cycle';
+
+            const signal = document.getElementById('subscriptionSignals');
+            if (data.summary.price_change_count > 0) {
+                signal.style.display = 'flex';
+                signal.innerHTML = `<strong>Recurring price changes detected</strong><span>${data.summary.price_change_count} subscription(s) moved in price compared with their historical baseline.</span>`;
+            } else {
+                signal.style.display = 'none';
+                signal.innerHTML = '';
+            }
 
             subscriptionsData = data.items || [];
             renderSubscriptions(subscriptionsData);

@@ -1,3 +1,3 @@
-"""Spectra — Open Banking → AI → Google Sheets pipeline."""
+"""Spectra — local-first finance import, categorization, and dashboard."""
 
-__version__ = "0.1.0"
+__version__ = "0.3.0"

@@ -3,7 +3,7 @@
 
 {% block content %}
 <h1 class="page-title">Upload</h1>
-<p class="page-subtitle">Drag and drop a CSV or PDF bank export</p>
+<p class="page-subtitle">Drag and drop a CSV or PDF bank export, then review merchants and categories before saving</p>
 
 <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
     <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
@@ -35,6 +35,7 @@
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
         <h2 style="font-size:18px; font-weight:600;" id="previewTitle">Preview</h2>
         <div style="display:flex; gap:8px;">
+            <button class="btn btn-secondary" type="button" onclick="cancelPreview()">Cancel</button>
             <button class="btn btn-success" id="confirmBtn" onclick="confirmImport()"
                 style="display:flex; align-items:center; gap:6px;">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -46,6 +47,11 @@
         </div>
     </div>
 
+    <div class="inline-banner" id="previewReviewNote">
+        <strong>Review mode</strong>
+        <span>Edit merchants/categories inline. Use “Apply to similar” to propagate fixes in the current batch. “Learn” stores the correction for future imports.</span>
+    </div>
+
     <div class="table-container">
         <table>
             <thead>
@@ -54,7 +60,9 @@
                     <th>Merchant</th>
                     <th>Category</th>
                     <th>Recurring</th>
+                    <th>Learn</th>
                     <th style="text-align:right">Amount</th>
+                    <th style="text-align:right">Action</th>
                 </tr>
             </thead>
             <tbody id="previewBody"></tbody>
@@ -66,9 +74,99 @@
 {% block scripts %}
 <script>
     let previewData = [];
+    let previewCategories = [];
 
     const zone = document.getElementById('uploadZone');
     const fileInput = document.getElementById('fileInput');
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#39;');
+    }
+
+    function normalizePreviewText(value) {
+        return String(value || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, ' ')
+            .trim();
+    }
+
+    async function loadPreviewCategories() {
+        try {
+            const res = await fetch('/api/categories');
+            const data = await res.json();
+            previewCategories = Array.isArray(data.categories) ? data.categories : [];
+            if (previewData.length) {
+                renderPreviewRows();
+            }
+        } catch (_err) {
+            previewCategories = [];
+        }
+    }
+
+    function categoryOptionsHtml(selected) {
+        const merged = ['Uncategorized', ...previewCategories];
+        if (selected && !merged.includes(selected)) {
+            merged.push(selected);
+        }
+
+        return merged
+            .filter((value, index, self) => value && self.indexOf(value) === index)
+            .map(category => `<option value="${escapeHtml(category)}" ${category === selected ? 'selected' : ''}>${escapeHtml(category)}</option>`)
+            .join('');
+    }
+
+    function updatePreviewField(index, field, value) {
+        if (!previewData[index]) {
+            return;
+        }
+        previewData[index][field] = value;
+    }
+
+    function togglePreviewLearning(index, checked) {
+        if (!previewData[index]) {
+            return;
+        }
+        previewData[index].apply_to_future = Boolean(checked);
+    }
+
+    function applyToSimilar(index) {
+        const source = previewData[index];
+        if (!source) {
+            return;
+        }
+
+        const originalKey = normalizePreviewText(source.original_description || source.merchant);
+        const merchantKey = normalizePreviewText(source.merchant).split(' ').filter(token => token.length >= 3)[0] || normalizePreviewText(source.merchant);
+        let updated = 0;
+
+        previewData = previewData.map(item => {
+            const itemOriginal = normalizePreviewText(item.original_description || item.merchant);
+            const itemMerchant = normalizePreviewText(item.merchant);
+            const isSimilar = itemOriginal === originalKey
+                || (merchantKey && itemOriginal.includes(merchantKey))
+                || (merchantKey && itemMerchant.includes(merchantKey));
+
+            if (!isSimilar) {
+                return item;
+            }
+
+            updated += 1;
+            return {
+                ...item,
+                merchant: source.merchant,
+                category: source.category,
+                apply_to_future: source.apply_to_future,
+            };
+        });
+
+        renderPreviewRows();
+        showToast(`Applied review changes to ${updated} similar row(s)`);
+    }
 
     // Drag & drop
     zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
@@ -141,8 +239,11 @@
                             zone.style.display = '';
                             return;
                         }
-                        previewData = event.transactions;
-                        showPreview(event.transactions, event.message);
+                        previewData = event.transactions.map(item => ({
+                            ...item,
+                            apply_to_future: item.apply_to_future !== false,
+                        }));
+                        showPreview(previewData, event.message);
                     }
                 }
             }
@@ -156,24 +257,43 @@
 
     function showPreview(txns, message) {
         document.getElementById('previewTitle').textContent = message || `${txns.length} transactions`;
-        const body = document.getElementById('previewBody');
+        renderPreviewRows();
+        document.getElementById('previewSection').classList.add('visible');
+    }
 
-        body.innerHTML = txns.map(t => {
+    function renderPreviewRows() {
+        const body = document.getElementById('previewBody');
+        body.innerHTML = previewData.map((t, index) => {
             const cls = t.amount < 0 ? 'expense' : 'income';
-            const uncat = t.category === 'Uncategorized';
             return `<tr>
-            <td>${t.date}</td>
-            <td>${t.merchant}</td>
-            <td><span class="${uncat ? 'badge badge-uncategorized' : 'badge'}">
-                <span class="badge-dot ${uncat ? '' : 'badge-dot-positive'}"></span>
-                ${t.category}
-            </span></td>
-            <td class="table-cell-muted">${t.recurring || '—'}</td>
+            <td>${escapeHtml(t.date)}</td>
+            <td>
+                <input
+                    class="settings-input preview-input"
+                    value="${escapeHtml(t.merchant)}"
+                    oninput="updatePreviewField(${index}, 'merchant', this.value)"
+                    aria-label="Merchant"
+                >
+                <div class="table-cell-muted preview-raw">${escapeHtml(t.original_description || '—')}</div>
+            </td>
+            <td>
+                <select class="settings-select preview-select" onchange="updatePreviewField(${index}, 'category', this.value)" aria-label="Category">
+                    ${categoryOptionsHtml(t.category)}
+                </select>
+            </td>
+            <td class="table-cell-muted">${escapeHtml(t.recurring || '—')}</td>
+            <td>
+                <label class="mini-checkbox">
+                    <input type="checkbox" ${t.apply_to_future ? 'checked' : ''} onchange="togglePreviewLearning(${index}, this.checked)">
+                    <span>Learn</span>
+                </label>
+            </td>
             <td class="amount ${cls}" style="text-align:right">${formatCurrency(t.amount)}</td>
+            <td style="text-align:right; white-space:nowrap;">
+                <button class="btn btn-secondary btn-sm" type="button" onclick="applyToSimilar(${index})">Apply to similar</button>
+            </td>
         </tr>`;
         }).join('');
-
-        document.getElementById('previewSection').classList.add('visible');
     }
 
     function cancelPreview() {
@@ -204,5 +324,7 @@
             btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Confirm & Save`;
         }
     }
+
+    loadPreviewCategories();
 </script>
 {% endblock %}

@@ -130,6 +130,298 @@ def _template_context(request: Request) -> dict[str, Any]:
     return {"request": request, **_load_app_preferences()}
 
 
+def _coerce_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    return default
+
+
+def _persist_learning(
+    db: BookmarkDB,
+    *,
+    tx_id: str | None,
+    original_description: str,
+    clean_name: str,
+    category: str,
+    source: str,
+    apply_to_future: bool,
+) -> None:
+    normalized_name = str(clean_name or "").strip()
+    normalized_category = str(category or "").strip()
+    normalized_original = str(original_description or "")
+    if not normalized_name or not normalized_category or normalized_category == "Uncategorized":
+        return
+
+    if apply_to_future:
+        db.save_merchant_category(normalized_name, normalized_category)
+        if normalized_original:
+            db.save_overrides(
+                {
+                    normalized_original: {
+                        "clean_name": normalized_name,
+                        "category": normalized_category,
+                    }
+                }
+            )
+
+    db.record_learning_feedback(
+        tx_id=tx_id,
+        original_description=normalized_original,
+        clean_name=normalized_name,
+        category=normalized_category,
+        source=source,
+        apply_to_future=apply_to_future,
+    )
+
+
+def _simulate_rule_impact(
+    db: BookmarkDB,
+    *,
+    rule_type: str,
+    pattern: str,
+    sample_text: str = "",
+) -> dict[str, Any]:
+    from spectra.rules import match_rule
+
+    candidate_rule = {
+        "rule_type": rule_type,
+        "pattern": pattern,
+        "is_active": True,
+    }
+    rows = db._conn.execute(
+        """
+        SELECT tx_id, date, clean_name, original_description, category
+        FROM tx_history
+        ORDER BY date DESC, tx_id DESC
+        """
+    ).fetchall()
+
+    examples: list[dict[str, Any]] = []
+    impact_count = 0
+    for tx_id, date_str, clean_name, original_description, category in rows:
+        if not match_rule(
+            candidate_rule,
+            clean_name=str(clean_name),
+            raw_description=str(original_description or clean_name),
+        ):
+            continue
+
+        impact_count += 1
+        if len(examples) < 5:
+            examples.append(
+                {
+                    "tx_id": str(tx_id),
+                    "date": str(date_str),
+                    "merchant": str(clean_name),
+                    "original_description": str(original_description or ""),
+                    "current_category": str(category),
+                }
+            )
+
+    matches_sample = False
+    if sample_text:
+        matches_sample = match_rule(
+            candidate_rule,
+            clean_name=sample_text,
+            raw_description=sample_text,
+        )
+
+    return {
+        "matches_sample": matches_sample,
+        "impact_count": impact_count,
+        "examples": examples,
+    }
+
+
+def _build_summary_insights(
+    *,
+    scope: str,
+    rows: list[tuple[str, str, float, str]],
+    period_start,
+    period_end,
+    pay_day: int,
+    total_spent: float,
+    uncategorized: int,
+    burn_rate: dict[str, Any] | None,
+    budget_limits: dict[str, float],
+) -> list[dict[str, str]]:
+    from collections import defaultdict
+    from datetime import timedelta
+    from statistics import median
+
+    def fmt(amount: float) -> str:
+        return f"EUR {amount:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+
+    insights: list[dict[str, str]] = []
+
+    if scope == "cycle" and burn_rate:
+        total_budget = round(sum(limit for limit in budget_limits.values() if limit and limit > 0), 2)
+        if total_budget > 0:
+            projected_total = float(burn_rate.get("projected_total", 0.0))
+            if projected_total > total_budget:
+                insights.append(
+                    {
+                        "type": "budget_risk",
+                        "severity": "warning",
+                        "title": "Projected cycle spend is above your current budget",
+                        "detail": f"Projected {fmt(projected_total)} vs configured budget {fmt(total_budget)}.",
+                        "href": "/budget",
+                    }
+                )
+            elif projected_total > total_budget * 0.9:
+                insights.append(
+                    {
+                        "type": "budget_watch",
+                        "severity": "info",
+                        "title": "Cycle spend is close to the configured budget",
+                        "detail": f"Projected {fmt(projected_total)} against budget {fmt(total_budget)}.",
+                        "href": "/budget",
+                    }
+                )
+
+    if uncategorized > 0:
+        insights.append(
+            {
+                "type": "uncategorized",
+                "severity": "warning",
+                "title": "Some transactions still need a category",
+                "detail": f"{uncategorized} transaction(s) are still uncategorized in the selected period.",
+                "href": "/transactions",
+            }
+        )
+
+    if scope != "cycle":
+        return insights[:4]
+
+    current_by_category: dict[str, float] = defaultdict(float)
+    previous_by_category: dict[str, float] = defaultdict(float)
+    history_by_merchant: dict[str, list[float]] = defaultdict(list)
+    current_expenses: list[tuple[str, float, str]] = []
+    subscription_by_merchant: dict[str, list[tuple[object, float]]] = defaultdict(list)
+
+    previous_cycle_start = cycle_start_for(period_start - timedelta(days=1), pay_day)
+    previous_cycle_end = period_start
+
+    for tx_date_str, clean_name, amount, category in rows:
+        tx_date = parse_iso_date(tx_date_str)
+        if amount >= 0:
+            continue
+
+        spend = abs(float(amount))
+        merchant = str(clean_name)
+        category_name = str(category)
+
+        if tx_date < period_start:
+            history_by_merchant[merchant].append(spend)
+        if previous_cycle_start <= tx_date < previous_cycle_end:
+            previous_by_category[category_name] += spend
+        if period_start <= tx_date < period_end:
+            current_expenses.append((merchant, spend, category_name))
+            current_by_category[category_name] += spend
+
+        if category_name == "Digital Subscriptions":
+            subscription_by_merchant[merchant].append((tx_date, spend))
+
+    biggest_delta = None
+    for category_name, current_total in current_by_category.items():
+        previous_total = previous_by_category.get(category_name, 0.0)
+        delta = current_total - previous_total
+        if delta <= max(25.0, previous_total * 0.25):
+            continue
+        if biggest_delta is None or delta > biggest_delta[1]:
+            biggest_delta = (category_name, delta, previous_total, current_total)
+
+    if biggest_delta:
+        category_name, delta, previous_total, current_total = biggest_delta
+        previous_text = fmt(previous_total) if previous_total else "EUR 0,00"
+        insights.append(
+            {
+                "type": "category_delta",
+                "severity": "info",
+                "title": f"{category_name} is the main driver this cycle",
+                "detail": f"Up by {fmt(delta)} versus the previous cycle ({fmt(current_total)} vs {previous_text}).",
+                "href": "/trends",
+            }
+        )
+
+    anomalies: list[tuple[str, float, float]] = []
+    first_time_large: list[tuple[str, float]] = []
+    for merchant, spend, _category_name in current_expenses:
+        past_amounts = history_by_merchant.get(merchant, [])
+        if len(past_amounts) >= 2:
+            baseline = float(median(past_amounts))
+            if baseline > 0 and spend > baseline * 1.8 and (spend - baseline) >= 20:
+                anomalies.append((merchant, spend, baseline))
+        elif not past_amounts and spend >= 150:
+            first_time_large.append((merchant, spend))
+
+    if anomalies:
+        anomalies.sort(key=lambda item: item[1] - item[2], reverse=True)
+        merchant, spend, baseline = anomalies[0]
+        insights.append(
+            {
+                "type": "anomaly",
+                "severity": "warning",
+                "title": f"{len(anomalies)} unusual charge(s) detected",
+                "detail": f"{merchant} posted {fmt(spend)} vs a usual baseline near {fmt(baseline)}.",
+                "href": "/transactions",
+            }
+        )
+    elif first_time_large:
+        first_time_large.sort(key=lambda item: item[1], reverse=True)
+        merchant, spend = first_time_large[0]
+        insights.append(
+            {
+                "type": "first_time_large",
+                "severity": "info",
+                "title": "Large first-time expense found in this cycle",
+                "detail": f"{merchant} appears as a new merchant with a {fmt(spend)} charge.",
+                "href": "/transactions",
+            }
+        )
+
+    subscription_changes: list[tuple[str, float, float]] = []
+    for merchant, history in subscription_by_merchant.items():
+        history.sort(key=lambda item: item[0])
+        if len(history) < 2:
+            continue
+        latest_date, latest_amount = history[-1]
+        if not (period_start <= latest_date < period_end):
+            continue
+
+        previous_amounts = [amount for _dt, amount in history[:-1]]
+        baseline = float(median(previous_amounts)) if previous_amounts else 0.0
+        diff = latest_amount - baseline
+        if baseline > 0 and abs(diff) >= max(1.0, baseline * 0.08):
+            subscription_changes.append((merchant, latest_amount, baseline))
+
+    if subscription_changes:
+        subscription_changes.sort(key=lambda item: abs(item[1] - item[2]), reverse=True)
+        merchant, latest_amount, baseline = subscription_changes[0]
+        direction = "up" if latest_amount > baseline else "down"
+        insights.append(
+            {
+                "type": "subscription_change",
+                "severity": "info",
+                "title": "A recurring subscription changed price",
+                "detail": f"{merchant} moved {direction} to {fmt(latest_amount)} from a prior baseline near {fmt(baseline)}.",
+                "href": "/subscriptions",
+            }
+        )
+
+    return insights[:4]
+
+
 # ── Pages ────────────────────────────────────────────────────────
 
 
@@ -204,6 +496,7 @@ async def api_summary(scope: str = Query("cycle")):
         rows = db._conn.execute(
             "SELECT date, clean_name, amount, category FROM tx_history ORDER BY date DESC"
         ).fetchall()
+        budget_limits = db.get_budget_limits()
 
     if not rows:
         return {
@@ -214,6 +507,7 @@ async def api_summary(scope: str = Query("cycle")):
             "selected_period": {"start": period_start.isoformat(), "end": period_end.isoformat(), "label": scope_label},
             "pay_day": pay_day, "cycle_start_day": pay_day, "has_data": False,
             "burn_rate": burn_rate,
+            "insights": [],
         }
 
     from collections import Counter, defaultdict
@@ -280,6 +574,18 @@ async def api_summary(scope: str = Query("cycle")):
             total_spent=total_spent,
         )
 
+    insights = _build_summary_insights(
+        scope=scope,
+        rows=rows,
+        period_start=period_start,
+        period_end=period_end,
+        pay_day=pay_day,
+        total_spent=total_spent,
+        uncategorized=uncategorized,
+        burn_rate=burn_rate,
+        budget_limits=budget_limits,
+    )
+
     return {
         "total_spent": round(total_spent, 2),
         "total_income": round(total_income, 2),
@@ -301,6 +607,7 @@ async def api_summary(scope: str = Query("cycle")):
         "cycle_start_day": pay_day,
         "has_data": in_scope_count > 0,
         "burn_rate": burn_rate,
+        "insights": insights,
     }
 
 
@@ -366,27 +673,47 @@ async def api_update_transaction(tx_id: str, request: Request):
     body = await request.json()
     new_category = body.get("category")
     new_merchant = body.get("merchant")
+    apply_to_future = _coerce_bool(body.get("apply_to_future"), True)
 
     with _get_db() as db:
         # Get current merchant name for this transaction
         row = db._conn.execute(
-            "SELECT clean_name FROM tx_history WHERE tx_id = ?", (tx_id,)
+            "SELECT clean_name, original_description, category FROM tx_history WHERE tx_id = ?",
+            (tx_id,),
         ).fetchone()
 
         if not row:
             return JSONResponse({"error": "Transaction not found"}, status_code=404)
 
         old_name = row[0]
+        original_description = str(row[1] or "")
+        current_category = str(row[2] or "Uncategorized")
         merchant_name = new_merchant or old_name
+        category_name = new_category or current_category
+
+        if new_merchant:
+            db._conn.execute(
+                "UPDATE tx_history SET clean_name = ? WHERE tx_id = ?",
+                (merchant_name, tx_id),
+            )
 
         if new_category:
-            db.save_merchant_category(merchant_name, new_category)
             # Also update the category directly on this transaction
             db._conn.execute(
                 "UPDATE tx_history SET category = ? WHERE tx_id = ?",
                 (new_category, tx_id),
             )
-            db._conn.commit()
+        db._conn.commit()
+
+        _persist_learning(
+            db,
+            tx_id=tx_id,
+            original_description=original_description,
+            clean_name=str(merchant_name),
+            category=str(category_name),
+            source="manual_edit",
+            apply_to_future=apply_to_future,
+        )
 
     return {"ok": True, "id": tx_id}
 
@@ -397,6 +724,7 @@ async def api_bulk_update_category(request: Request):
     body = await request.json()
     ids = body.get("ids") or []
     category = str(body.get("category") or "").strip()
+    apply_to_future = _coerce_bool(body.get("apply_to_future"), True)
 
     if not isinstance(ids, list) or not ids:
         return JSONResponse({"error": "ids must be a non-empty list"}, status_code=400)
@@ -410,7 +738,7 @@ async def api_bulk_update_category(request: Request):
     with _get_db() as db:
         placeholders = ",".join("?" for _ in cleaned_ids)
         merchant_rows = db._conn.execute(
-            f"SELECT DISTINCT clean_name FROM tx_history WHERE tx_id IN ({placeholders})",
+            f"SELECT tx_id, clean_name, original_description FROM tx_history WHERE tx_id IN ({placeholders})",
             cleaned_ids,
         ).fetchall()
         db._conn.execute(
@@ -419,9 +747,16 @@ async def api_bulk_update_category(request: Request):
         )
         db._conn.commit()
 
-        for (merchant_name,) in merchant_rows:
-            if merchant_name:
-                db.save_merchant_category(merchant_name, category)
+        for tx_row_id, merchant_name, original_description in merchant_rows:
+            _persist_learning(
+                db,
+                tx_id=str(tx_row_id),
+                original_description=str(original_description or ""),
+                clean_name=str(merchant_name or ""),
+                category=category,
+                source="bulk_edit",
+                apply_to_future=apply_to_future,
+            )
 
     return {"ok": True, "updated": len(cleaned_ids), "category": category}
 
@@ -450,6 +785,10 @@ async def api_settings():
         preferences = _load_app_preferences(db)
         tx_count = db._conn.execute("SELECT COUNT(*) FROM tx_history").fetchone()[0]
         merchant_count = db._conn.execute("SELECT COUNT(*) FROM merchant_categories").fetchone()[0]
+        feedback_count = db._conn.execute("SELECT COUNT(*) FROM learning_feedback").fetchone()[0]
+        active_rule_count = db._conn.execute(
+            "SELECT COUNT(*) FROM category_rules WHERE is_active = 1"
+        ).fetchone()[0]
         cats = db._conn.execute(
             "SELECT DISTINCT category FROM tx_history WHERE category != 'Uncategorized'"
         ).fetchall()
@@ -459,6 +798,8 @@ async def api_settings():
         "currency": settings.base_currency,
         "tx_count": tx_count,
         "merchant_count": merchant_count,
+        "feedback_count": feedback_count,
+        "active_rule_count": active_rule_count,
         "category_count": len(cats),
         "sheets_connected": bool(settings.spreadsheet_id),
         **preferences,
@@ -512,7 +853,15 @@ async def api_get_category_rules():
     """Return user-defined categorization rules."""
     with _get_db() as db:
         rules = db.get_category_rules()
-    return {"rules": rules, "valid_rule_types": sorted(VALID_RULE_TYPES)}
+    return {
+        "rules": rules,
+        "valid_rule_types": sorted(VALID_RULE_TYPES),
+        "summary": {
+            "total": len(rules),
+            "active": sum(1 for rule in rules if rule.get("is_active", True)),
+            "inactive": sum(1 for rule in rules if not rule.get("is_active", True)),
+        },
+    }
 
 
 @app.post("/api/settings/rules")
@@ -547,6 +896,67 @@ async def api_create_category_rule(request: Request):
     return {"ok": True, "rule": rule}
 
 
+@app.patch("/api/settings/rules/{rule_id}")
+async def api_update_category_rule(rule_id: int, request: Request):
+    """Toggle or reorder a categorization rule."""
+    body = await request.json()
+    move = str(body.get("move") or "").strip().lower()
+    is_active = body.get("is_active") if "is_active" in body else None
+
+    with _get_db() as db:
+        try:
+            if move:
+                rules = db.move_category_rule(rule_id, move)
+                rule = next((item for item in rules if int(item["id"]) == int(rule_id)), None)
+            else:
+                rule = db.update_category_rule(
+                    rule_id,
+                    is_active=_coerce_bool(is_active) if is_active is not None else None,
+                )
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        except KeyError:
+            return JSONResponse({"error": "Rule not found"}, status_code=404)
+
+    if not rule:
+        return JSONResponse({"error": "Rule not found"}, status_code=404)
+    return {"ok": True, "rule": rule}
+
+
+@app.post("/api/settings/rules/test")
+async def api_test_category_rule(request: Request):
+    """Preview whether a rule would match sample text and historical rows."""
+    body = await request.json()
+    pattern = str(body.get("pattern") or "").strip()
+    sample_text = str(body.get("sample_text") or "").strip()
+
+    if not pattern:
+        return JSONResponse({"error": "pattern is required"}, status_code=400)
+
+    try:
+        rule_type = normalize_rule_type(str(body.get("rule_type") or "contains"))
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    if rule_type == "regex":
+        import re
+
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            return JSONResponse({"error": f"Invalid regex: {exc}"}, status_code=400)
+
+    with _get_db() as db:
+        preview = _simulate_rule_impact(
+            db,
+            rule_type=rule_type,
+            pattern=pattern,
+            sample_text=sample_text,
+        )
+
+    return {"ok": True, **preview}
+
+
 @app.delete("/api/settings/rules/{rule_id}")
 async def api_delete_category_rule(rule_id: int):
     """Delete a categorization rule by ID."""
@@ -555,6 +965,39 @@ async def api_delete_category_rule(rule_id: int):
     if not deleted:
         return JSONResponse({"error": "Rule not found"}, status_code=404)
     return {"ok": True, "id": rule_id}
+
+
+@app.get("/api/settings/learning")
+async def api_learning_summary():
+    """Return recent learning events and summary counters."""
+    with _get_db() as db:
+        events = db.get_recent_learning_feedback(limit=40)
+        feedback_count = db._conn.execute("SELECT COUNT(*) FROM learning_feedback").fetchone()[0]
+        override_count = db._conn.execute("SELECT COUNT(*) FROM user_overrides").fetchone()[0]
+        uncategorized_count = db._conn.execute(
+            "SELECT COUNT(*) FROM tx_history WHERE category = 'Uncategorized'"
+        ).fetchone()[0]
+        learned_future_count = db._conn.execute(
+            "SELECT COUNT(*) FROM learning_feedback WHERE apply_to_future = 1"
+        ).fetchone()[0]
+
+    return {
+        "events": events,
+        "summary": {
+            "feedback_count": int(feedback_count),
+            "override_count": int(override_count),
+            "uncategorized_count": int(uncategorized_count),
+            "learned_future_count": int(learned_future_count),
+        },
+    }
+
+
+@app.post("/api/settings/learning/reapply")
+async def api_reapply_learning():
+    """Re-run deterministic learning on historical transactions."""
+    with _get_db() as db:
+        result = db.reapply_learning_to_history()
+    return {"ok": True, **result}
 
 
 @app.post("/api/settings/reset-db")
@@ -790,6 +1233,9 @@ async def api_confirm(request: Request):
         from spectra.ai import CategorisedTransaction
 
         cats = []
+        future_mappings: dict[str, str] = {}
+        future_overrides: dict[str, dict[str, str]] = {}
+        learned_count = 0
         for t in transactions:
             ct = CategorisedTransaction(
                 id=t["id"], original_description=t.get("original_description", ""),
@@ -799,9 +1245,28 @@ async def api_confirm(request: Request):
             )
             cats.append(ct)
 
+            apply_to_future = _coerce_bool(t.get("apply_to_future"), True)
+            _persist_learning(
+                db,
+                tx_id=str(ct.id),
+                original_description=str(ct.original_description),
+                clean_name=str(ct.clean_name),
+                category=str(ct.category),
+                source="upload_confirm",
+                apply_to_future=apply_to_future,
+            )
+            if apply_to_future and ct.category != "Uncategorized":
+                future_mappings[ct.clean_name] = ct.category
+                if ct.original_description:
+                    future_overrides[ct.original_description] = {
+                        "clean_name": ct.clean_name,
+                        "category": ct.category,
+                    }
+                learned_count += 1
+
         db.save_history(cats)
-        mappings = {t.clean_name: t.category for t in cats if t.category != "Uncategorized"}
-        db.save_merchant_categories_batch(mappings)
+        db.save_merchant_categories_batch(future_mappings)
+        db.save_overrides(future_overrides)
 
         # Optionally sync to Google Sheets
         if settings.spreadsheet_id and (settings.google_sheets_credentials_b64 or
@@ -816,12 +1281,21 @@ async def api_confirm(request: Request):
                 sheets.append_transactions(cats)
                 from spectra.dashboard import refresh_dashboard
                 refresh_dashboard(sheets)
-                return {"ok": True, "message": f"Saved {len(cats)} transactions + synced to Sheets"}
+                return {
+                    "ok": True,
+                    "message": f"Saved {len(cats)} transactions + synced to Sheets · learned {learned_count} future mapping(s)",
+                }
             except Exception as e:
                 logger.warning("Sheets sync failed: %s", e)
-                return {"ok": True, "message": f"Saved {len(cats)} transactions (Sheets sync failed)"}
+                return {
+                    "ok": True,
+                    "message": f"Saved {len(cats)} transactions · learned {learned_count} future mapping(s) (Sheets sync failed)",
+                }
 
-    return {"ok": True, "message": f"Saved {len(cats)} transactions to local DB"}
+    return {
+        "ok": True,
+        "message": f"Saved {len(cats)} transactions to local DB · learned {learned_count} future mapping(s)",
+    }
 
 
 
@@ -1060,6 +1534,7 @@ async def api_subscriptions():
 
     items: list[dict[str, Any]] = []
     monthly_total = 0.0
+    price_change_count = 0
 
     for merchant, bucket in buckets.items():
         dates = sorted(set(bucket["dates"]))
@@ -1082,6 +1557,14 @@ async def api_subscriptions():
 
         last_date = parse_iso_date(bucket["last_date"]) if bucket["last_date"] else dates[-1]
         next_charge = last_date + timedelta(days=cadence_days)
+        previous_amounts = amounts[:-1]
+        baseline_amount = median(previous_amounts) if previous_amounts else amounts[-1]
+        change_amount = round(amounts[-1] - baseline_amount, 2)
+        change_pct = round((change_amount / baseline_amount) * 100, 1) if baseline_amount else 0.0
+        price_change_direction = ""
+        if previous_amounts and abs(change_amount) >= max(1.0, baseline_amount * 0.08):
+            price_change_direction = "up" if change_amount > 0 else "down"
+            price_change_count += 1
 
         items.append(
             {
@@ -1096,6 +1579,9 @@ async def api_subscriptions():
                 "annual_projection": round(annual_projection, 2),
                 "in_current_cycle": round(bucket["in_cycle"], 2),
                 "payments_count": len(amounts),
+                "price_change_direction": price_change_direction,
+                "change_amount": change_amount,
+                "change_pct": change_pct,
             }
         )
 
@@ -1108,6 +1594,7 @@ async def api_subscriptions():
             "monthly_estimate": round(monthly_total, 2),
             "annual_projection": round(monthly_total * 12, 2),
             "in_current_cycle": round(sum(item["in_current_cycle"] for item in items), 2),
+            "price_change_count": price_change_count,
         },
         "current_cycle": {
             "start": cycle_start.isoformat(),

@@ -25,6 +25,7 @@ from spectra.cycles import (
     parse_iso_date,
 )
 from spectra.db import BookmarkDB
+from spectra.ml_classifier import build_seed_data
 from spectra.recurring import detect_recurring_kind
 from spectra.rules import VALID_RULE_TYPES, normalize_rule_type
 
@@ -773,6 +774,17 @@ async def api_categories():
         ).fetchall()
     return {"categories": [row[0] for row in cats]}
 
+
+@app.get("/api/categories/options")
+async def api_categories_options():
+    """Return all categories."""
+    with _get_db() as db:
+        cats = db._conn.execute(
+            "SELECT DISTINCT category FROM tx_history WHERE category != 'Uncategorized' ORDER BY category"
+        ).fetchall()
+    known_cats = [row[0] for row in cats]
+    other_cats = [row[1] for row in build_seed_data()]
+    return {"categories": set(known_cats + other_cats)}
 
 # ── API: Settings ────────────────────────────────────────────────
 

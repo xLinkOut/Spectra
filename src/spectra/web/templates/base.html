@@ -170,6 +170,16 @@
     <div class="toast-container" id="toastContainer"></div>
 
     <script>
+        let defaultCurrency = null; // initially §null§ and will be populated when needed using `loadCurrency`
+        // Promise<string|undefined>
+        async function loadCurrency() {
+            if (!defaultCurrency) {
+                const response = await fetch('/api/settings');
+                defaultCurrency = await response.json()['currency'];
+            }
+            return defaultCurrency;
+        }
+
         const themeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
         function emitThemeChange(detail) {
@@ -250,8 +260,9 @@
             }, 4000);
         }
 
-        function formatCurrency(amount) {
-            return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(amount);
+        function formatCurrency(amount, currency = undefined) {
+            const options = { style: 'currency', currency: currency || defaultCurrency };
+            return new Intl.NumberFormat(navigator.language || 'it-IT', options).format(amount);
         }
 
         function toggleSidebar() {

@@ -261,10 +261,58 @@
         document.getElementById('previewSection').classList.add('visible');
     }
 
+    /**
+     * Handles the change event for a "recurring" dropdown in a table.
+     * If the user selects the "Other" option, this function replaces the
+     * dropdown with a text input to allow for a custom value.
+     *
+     * @param {number} index - The index of the transaction row in the preview data array.
+     * @param {HTMLSelectElement} select - The <select> element that triggered the event.
+     */
+    function checkRecurringCustom(index, select) {
+        if (select.value === '__other__') {
+            const td = select.parentElement;
+            td.innerHTML = '';
+            const input = document.createElement('input');
+            input.className = 'settings-input preview-input';
+            input.placeholder = 'Custom name...';
+            input.onkeydown = (e) => {
+                if (e.key === 'Enter') {
+                    if (input.value.trim()) updatePreviewField(index, 'recurring', input.value.trim());
+                    renderPreviewRows();
+                }
+            };
+            input.onblur = () => renderPreviewRows();
+            td.appendChild(input);
+            input.focus();
+        } else {
+            updatePreviewField(index, 'recurring', select.value);
+            if (select.value === '') renderPreviewRows();
+        }
+    }
+
     function renderPreviewRows() {
         const body = document.getElementById('previewBody');
         body.innerHTML = previewData.map((t, index) => {
             const cls = t.amount < 0 ? 'expense' : 'income';
+
+            let recurringHtml;
+            if (!t.recurring) {
+                recurringHtml = `<div class="table-cell-muted" style="padding:6px 10px;">—</div>`;
+            } else {
+                const opts = ['Subscription', 'Salary/Income'];
+                if (!opts.includes(t.recurring)) opts.push(t.recurring);
+                const optionsHtml = opts.map(o =>
+                    `<option value="${escapeHtml(o)}" ${o === t.recurring ? 'selected' : ''}>${escapeHtml(o)}</option>`
+                ).join('');
+                recurringHtml = `
+                    <select class="settings-select preview-select" onchange="checkRecurringCustom(${index}, this)" aria-label="Recurring">
+                        <option value="">Not recurring</option>
+                        ${optionsHtml}
+                        <option value="__other__">Other...</option>
+                    </select>`;
+            }
+
             return `<tr>
             <td>${escapeHtml(t.date)}</td>
             <td>
@@ -281,7 +329,9 @@
                     ${categoryOptionsHtml(t.category)}
                 </select>
             </td>
-            <td class="table-cell-muted">${escapeHtml(t.recurring || '—')}</td>
+            <td>
+                ${recurringHtml}
+            </td>
             <td>
                 <label class="mini-checkbox">
                     <input type="checkbox" ${t.apply_to_future ? 'checked' : ''} onchange="togglePreviewLearning(${index}, this.checked)">

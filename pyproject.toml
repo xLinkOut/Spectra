@@ -54,6 +54,7 @@ dev = [
 
 [project.scripts]
 spectra = "spectra.pipeline:main"
+spectra-start = "spectra.docker_start:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

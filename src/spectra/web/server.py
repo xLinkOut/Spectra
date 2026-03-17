@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, File, Query, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -40,8 +41,10 @@ templates = Jinja2Templates(directory=str(_TEMPLATES))
 
 _THEME_SETTING_KEY = "theme_preference"
 _PAY_DAY_SETTING_KEY = "cycle_start_day"
+_BASE_CURRENCY_SETTING_KEY = "base_currency"
 _VALID_THEME_PREFERENCES = {"auto", "light", "dark"}
 _VALID_SUMMARY_SCOPES = {"cycle", "90d", "ytd"}
+_CURRENCY_CODE_RE = re.compile(r"^[A-Z]{3}$")
 
 
 # ── Global error handler ─────────────────────────────────────────
@@ -124,6 +127,41 @@ def _build_cycle_burn_rate(*, today, period_start, period_end, total_spent: floa
         "daily_spend": round(daily_spend, 2),
         "projected_total": round(projected_total, 2),
     }
+
+
+def _normalize_currency_code(value: str | None) -> str | None:
+    code = str(value or "").strip().upper()
+    if not code:
+        return None
+    if not _CURRENCY_CODE_RE.fullmatch(code):
+        return None
+    return code
+
+
+def _resolve_base_currency(settings: Settings, db: BookmarkDB) -> str:
+    stored = _normalize_currency_code(db.get_app_setting(_BASE_CURRENCY_SETTING_KEY))
+    if stored:
+        return stored
+    from_env = _normalize_currency_code(settings.base_currency)
+    return from_env or "EUR"
+
+
+def _requires_base_currency_setup(db: BookmarkDB) -> bool:
+    if _normalize_currency_code(db.get_app_setting(_BASE_CURRENCY_SETTING_KEY)):
+        return False
+    tx_count_row = db._conn.execute("SELECT COUNT(*) FROM tx_history").fetchone()
+    tx_count = int(tx_count_row[0] if tx_count_row else 0)
+    return tx_count == 0
+
+
+def _setup_redirect_if_needed(request: Request) -> RedirectResponse | None:
+    if request.url.path == "/settings":
+        return None
+    settings = load_settings()
+    with BookmarkDB(settings.db_path) as db:
+        if _requires_base_currency_setup(db):
+            return RedirectResponse(url="/settings?setup=currency", status_code=303)
+    return None
 
 
 def _template_context(request: Request) -> dict[str, Any]:
@@ -427,16 +465,22 @@ def _build_summary_insights(
 
 @app.get("/", response_class=HTMLResponse)
 async def page_dashboard(request: Request):
+    if (redirect := _setup_redirect_if_needed(request)):
+        return redirect
     return templates.TemplateResponse("dashboard.html", _template_context(request))
 
 
 @app.get("/transactions", response_class=HTMLResponse)
 async def page_transactions(request: Request):
+    if (redirect := _setup_redirect_if_needed(request)):
+        return redirect
     return templates.TemplateResponse("transactions.html", _template_context(request))
 
 
 @app.get("/upload", response_class=HTMLResponse)
 async def page_upload(request: Request):
+    if (redirect := _setup_redirect_if_needed(request)):
+        return redirect
     return templates.TemplateResponse("upload.html", _template_context(request))
 
 
@@ -447,6 +491,8 @@ async def page_settings(request: Request):
 
 @app.get("/subscriptions", response_class=HTMLResponse)
 async def page_subscriptions(request: Request):
+    if (redirect := _setup_redirect_if_needed(request)):
+        return redirect
     return templates.TemplateResponse("subscriptions.html", _template_context(request))
 
 
@@ -785,6 +831,8 @@ async def api_settings():
     settings = load_settings()
     with _get_db() as db:
         preferences = _load_app_preferences(db)
+        effective_currency = _resolve_base_currency(settings, db)
+        requires_currency_setup = _requires_base_currency_setup(db)
         tx_count = db._conn.execute("SELECT COUNT(*) FROM tx_history").fetchone()[0]
         merchant_count = db._conn.execute("SELECT COUNT(*) FROM merchant_categories").fetchone()[0]
         feedback_count = db._conn.execute("SELECT COUNT(*) FROM learning_feedback").fetchone()[0]
@@ -797,7 +845,8 @@ async def api_settings():
 
     return {
         "provider": settings.ai_provider,
-        "currency": settings.base_currency,
+        "currency": effective_currency,
+        "requires_base_currency_setup": requires_currency_setup,
         "tx_count": tx_count,
         "merchant_count": merchant_count,
         "feedback_count": feedback_count,
@@ -824,6 +873,15 @@ async def api_update_preferences(request: Request):
             )
         updates[_THEME_SETTING_KEY] = theme_preference
 
+    if "base_currency" in body:
+        base_currency = _normalize_currency_code(body.get("base_currency"))
+        if not base_currency:
+            return JSONResponse(
+                {"error": "base_currency must be a valid 3-letter ISO code (e.g. EUR, USD, GBP)"},
+                status_code=400,
+            )
+        updates[_BASE_CURRENCY_SETTING_KEY] = base_currency
+
     raw_pay_day = body.get("pay_day", body.get("cycle_start_day"))
     if raw_pay_day is not None:
         try:
@@ -842,10 +900,14 @@ async def api_update_preferences(request: Request):
         for key, value in updates.items():
             db.set_app_setting(key, value)
         preferences = _load_app_preferences(db)
+        effective_currency = _resolve_base_currency(load_settings(), db)
+        requires_currency_setup = _requires_base_currency_setup(db)
 
     return {
         "ok": True,
         **preferences,
+        "currency": effective_currency,
+        "requires_base_currency_setup": requires_currency_setup,
         "current_cycle": _build_cycle_payload(preferences["pay_day"]),
     }
 
@@ -1034,11 +1096,19 @@ async def api_upload(file: UploadFile = File(...)):
     from fastapi.responses import StreamingResponse as _SR
 
     settings = load_settings()
+    with BookmarkDB(settings.db_path) as db:
+        if _requires_base_currency_setup(db):
+            return JSONResponse(
+                {"error": "Base currency not set. Open Settings and choose your base currency first."},
+                status_code=400,
+            )
+        base_currency = _resolve_base_currency(settings, db)
 
     suffix = Path(file.filename or "upload.csv").suffix.lower()
     if suffix not in supported_file_types:
+        supported = " or ".join(supported_file_types)
         return JSONResponse(
-            {"error": f"Unsupported file type: {suffix}. Upload a {" or ".join(supported_file_types)}"},
+            {"error": f"Unsupported file type: {suffix}. Upload a {supported}"},
             status_code=400,
         )
 
@@ -1064,13 +1134,13 @@ async def api_upload(file: UploadFile = File(...)):
             try:
                 if suffix == ".pdf":
                     from spectra.pdf_parser import parse_pdf
-                    parsed = parse_pdf(tmp_path, currency=settings.base_currency)
+                    parsed = parse_pdf(tmp_path, currency=base_currency)
                 elif suffix == ".csv":
                     from spectra.csv_parser import parse_csv
-                    parsed = parse_csv(tmp_path, currency=settings.base_currency)
+                    parsed = parse_csv(tmp_path, currency=base_currency)
                 else:
                     from spectra.ofx_parser import parse_ofx
-                    parsed = parse_ofx(tmp_path, currency=settings.base_currency)
+                    parsed = parse_ofx(tmp_path, currency=base_currency)
             finally:
                 Path(tmp_path).unlink(missing_ok=True)
 
@@ -1178,7 +1248,7 @@ async def api_upload(file: UploadFile = File(...)):
 
                     results = categorise(flat, [], provider=provider,
                                          api_key=api_key, model=model,
-                                         base_currency=settings.base_currency)
+                                         base_currency=base_currency)
                     categorised.extend(results)
 
             # ── Phase 5: recurring detection ───────────────────────
@@ -1194,11 +1264,11 @@ async def api_upload(file: UploadFile = File(...)):
             await asyncio.sleep(0)
             from spectra.fx import convert_currency
             for t in categorised:
-                if t.currency.upper() != settings.base_currency:
+                if t.currency.upper() != base_currency:
                     orig_amt, orig_cur = t.amount, t.currency.upper()
-                    t.amount = convert_currency(orig_amt, orig_cur, settings.base_currency, t.date)
+                    t.amount = convert_currency(orig_amt, orig_cur, base_currency, t.date)
                     t.original_amount, t.original_currency = orig_amt, orig_cur
-                    t.currency = settings.base_currency
+                    t.currency = base_currency
 
             # ── Done ───────────────────────────────────────────────
             preview = [
@@ -1234,6 +1304,13 @@ async def api_confirm(request: Request):
         return {"ok": False, "message": "No transactions to save"}
 
     settings = load_settings()
+    with BookmarkDB(settings.db_path) as db:
+        if _requires_base_currency_setup(db):
+            return JSONResponse(
+                {"ok": False, "message": "Base currency not set. Open Settings and choose your base currency first."},
+                status_code=400,
+            )
+        base_currency = _resolve_base_currency(settings, db)
 
     with _get_db() as db:
         from spectra.ai import CategorisedTransaction
@@ -1246,7 +1323,7 @@ async def api_confirm(request: Request):
             ct = CategorisedTransaction(
                 id=t["id"], original_description=t.get("original_description", ""),
                 clean_name=t["merchant"], category=t["category"],
-                amount=t["amount"], currency=t.get("currency", settings.base_currency),
+                amount=t["amount"], currency=t.get("currency", base_currency),
                 date=t["date"], recurring=t.get("recurring", ""),
             )
             cats.append(ct)
@@ -1310,11 +1387,15 @@ async def api_confirm(request: Request):
 
 @app.get("/budget", response_class=HTMLResponse)
 async def page_budget(request: Request):
+    if (redirect := _setup_redirect_if_needed(request)):
+        return redirect
     return templates.TemplateResponse("budget.html", _template_context(request))
 
 
 @app.get("/trends", response_class=HTMLResponse)
 async def page_trends(request: Request):
+    if (redirect := _setup_redirect_if_needed(request)):
+        return redirect
     return templates.TemplateResponse("trends.html", _template_context(request))
 
 

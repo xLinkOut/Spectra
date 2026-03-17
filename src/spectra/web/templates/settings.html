@@ -5,6 +5,16 @@
 <h1 class="page-title">Settings</h1>
 <p class="page-subtitle">Local dashboard preferences plus active environment overview</p>
 
+<div class="settings-group settings-danger-zone" id="currencySetupNotice" style="display:none;">
+    <h3>Action Required</h3>
+    <div class="settings-row">
+        <div class="settings-label">
+            Set your Base Currency
+            <small>First-time setup: choose the base currency before using the app.</small>
+        </div>
+    </div>
+</div>
+
 <div class="settings-group">
     <h3>Appearance</h3>
     <div class="settings-row">
@@ -163,7 +173,22 @@
             Base Currency
             <small>All amounts converted to this currency via ECB rates</small>
         </div>
-        <div class="settings-value" id="currency">—</div>
+        <div class="settings-control-group">
+            <select class="settings-select" id="baseCurrencySelect">
+                <option value="EUR">EUR</option>
+                <option value="USD">USD</option>
+                <option value="GBP">GBP</option>
+                <option value="CHF">CHF</option>
+                <option value="JPY">JPY</option>
+                <option value="CAD">CAD</option>
+                <option value="AUD">AUD</option>
+                <option value="SEK">SEK</option>
+                <option value="NOK">NOK</option>
+                <option value="DKK">DKK</option>
+            </select>
+            <button class="btn btn-primary btn-sm" id="saveCurrencyBtn" type="button" onclick="saveBaseCurrency()">Save</button>
+            <span class="settings-badge" id="currencySetupBadge" style="display:none;">Required</span>
+        </div>
     </div>
 </div>
 
@@ -364,6 +389,38 @@
             showToast(`Cycle updated: ${data.current_cycle.label}`);
         } catch (err) {
             showToast(err.message || 'Financial cycle update failed', 'error');
+        } finally {
+            button.disabled = false;
+            button.textContent = previousLabel;
+        }
+    }
+
+    async function saveBaseCurrency() {
+        const select = document.getElementById('baseCurrencySelect');
+        const button = document.getElementById('saveCurrencyBtn');
+        if (!select || !button) {
+            return;
+        }
+
+        button.disabled = true;
+        const previousLabel = button.textContent;
+        button.textContent = '...';
+
+        try {
+            const res = await fetch('/api/settings/preferences', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ base_currency: select.value }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.ok) {
+                throw new Error(data.error || 'Currency update failed');
+            }
+
+            await loadSettings();
+            showToast(`Base currency set to ${data.currency}`);
+        } catch (err) {
+            showToast(err.message || 'Currency update failed', 'error');
         } finally {
             button.disabled = false;
             button.textContent = previousLabel;
@@ -646,7 +703,28 @@
             sheetsEl.className = `settings-badge ${s.sheets_connected ? 'local' : ''}`;
 
             // Currency
-            document.getElementById('currency').textContent = s.currency;
+            const currencySelect = document.getElementById('baseCurrencySelect');
+            if (currencySelect) {
+                const available = Array.from(currencySelect.options).map(opt => opt.value);
+                const normalizedCurrency = String(s.currency || 'EUR').toUpperCase();
+                if (!available.includes(normalizedCurrency)) {
+                    const custom = document.createElement('option');
+                    custom.value = normalizedCurrency;
+                    custom.textContent = normalizedCurrency;
+                    currencySelect.appendChild(custom);
+                }
+                currencySelect.value = normalizedCurrency;
+            }
+
+            const requiresCurrencySetup = Boolean(s.requires_base_currency_setup);
+            const currencyNotice = document.getElementById('currencySetupNotice');
+            const currencyBadge = document.getElementById('currencySetupBadge');
+            if (currencyNotice) {
+                currencyNotice.style.display = requiresCurrencySetup ? '' : 'none';
+            }
+            if (currencyBadge) {
+                currencyBadge.style.display = requiresCurrencySetup ? '' : 'none';
+            }
 
             // DB stats
             document.getElementById('txCount').textContent = s.tx_count.toLocaleString();
@@ -738,5 +816,9 @@
     loadRules();
     loadLearning();
     loadSettings();
+
+    if (new URLSearchParams(window.location.search).get('setup') === 'currency') {
+        showToast('First setup: choose your base currency to continue', 'info');
+    }
 </script>
 {% endblock %}

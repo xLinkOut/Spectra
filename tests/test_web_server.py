@@ -87,6 +87,27 @@ def test_patch_transaction_persists_learning(client: TestClient, web_settings: S
         assert learning[0]["apply_to_future"] is True
 
 
+def test_first_run_requires_currency_setup_redirect(client: TestClient) -> None:
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/settings?setup=currency"
+
+
+def test_base_currency_can_be_set_via_preferences(client: TestClient, web_settings: Settings) -> None:
+    response = client.patch(
+        "/api/settings/preferences",
+        json={"base_currency": "usd"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["currency"] == "USD"
+    assert payload["requires_base_currency_setup"] is False
+
+    with BookmarkDB(web_settings.db_path) as db:
+        assert db.get_app_setting("base_currency") == "USD"
+
+
 def test_rule_lifecycle_and_reapply_history(client: TestClient, web_settings: Settings) -> None:
     with BookmarkDB(web_settings.db_path) as db:
         seed_tx(
@@ -225,6 +246,9 @@ def test_summary_and_subscriptions_surface_signals(client: TestClient, web_setti
 
 
 def test_confirm_respects_apply_to_future(client: TestClient, web_settings: Settings) -> None:
+    with BookmarkDB(web_settings.db_path) as db:
+        db.set_app_setting("base_currency", "EUR")
+
     payload = {
         "transactions": [
             {

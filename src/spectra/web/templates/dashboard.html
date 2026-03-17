@@ -27,7 +27,7 @@
         <div class="card-value neutral" id="subscriptions">—</div>
     </div>
     <div class="card">
-        <div class="card-label">Uncategorized</div>
+        <div class="card-label">Uncategorized (All)</div>
         <div class="card-value warning" id="uncategorized">—</div>
     </div>
 </div>
@@ -293,7 +293,10 @@
             document.getElementById('totalSpent').textContent = formatCurrency(data.total_spent);
             document.getElementById('totalIncome').textContent = formatCurrency(data.total_income);
             document.getElementById('subscriptions').textContent = formatCurrency(data.subscriptions);
-            document.getElementById('uncategorized').textContent = data.uncategorized;
+            const uncategorizedValue = Number.isInteger(data.uncategorized_total)
+                ? data.uncategorized_total
+                : data.uncategorized;
+            document.getElementById('uncategorized').textContent = uncategorizedValue;
 
             document.getElementById('subtitle').textContent = data.scope_label || data.current_cycle?.label || 'Selected period';
             renderBurnRate(data);

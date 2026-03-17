@@ -501,7 +501,7 @@ async def api_summary(scope: str = Query("cycle")):
     if not rows:
         return {
             "total_spent": 0, "total_income": 0, "subscriptions": 0,
-            "uncategorized": 0, "by_category": {}, "monthly": {},
+            "uncategorized": 0, "uncategorized_total": 0, "by_category": {}, "monthly": {},
             "monthly_ranges": {}, "top_merchants": [], "current_cycle": _build_cycle_payload(pay_day),
             "scope": scope, "scope_label": scope_label,
             "selected_period": {"start": period_start.isoformat(), "end": period_end.isoformat(), "label": scope_label},
@@ -516,6 +516,7 @@ async def api_summary(scope: str = Query("cycle")):
     total_income = 0.0
     subscriptions = 0.0
     uncategorized = 0
+    uncategorized_total = sum(1 for _d, _m, _a, cat in rows if str(cat) == "Uncategorized")
     by_category: dict[str, float] = defaultdict(float)
     monthly: dict[str, float] = defaultdict(float)
     monthly_ranges: dict[str, dict[str, str]] = {}
@@ -591,6 +592,7 @@ async def api_summary(scope: str = Query("cycle")):
         "total_income": round(total_income, 2),
         "subscriptions": round(subscriptions, 2),
         "uncategorized": uncategorized,
+        "uncategorized_total": uncategorized_total,
         "by_category": {k: round(v, 2) for k, v in sorted(by_category.items(), key=lambda x: -x[1])},
         "monthly": monthly_data,
         "monthly_ranges": monthly_ranges_data,

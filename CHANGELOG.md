@@ -10,6 +10,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - Replaced direct dependency `pdfminer.six` with `pypdf` in `pyproject.toml`
 - PDF parser fallback now uses `pypdf` text extraction while keeping `pdfplumber` table extraction
+- Support for OFX files.
 
 ---
 

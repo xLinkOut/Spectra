@@ -4,7 +4,7 @@
 
 <h1 align="center">Spectra</h1>
 <p align="center">
-  <strong>Bank CSV/PDF → Categorization → Local Dashboard (optional Google Sheets)</strong><br>
+  <strong>Bank CSV/PDF/OFX → Categorization → Local Dashboard (optional Google Sheets)</strong><br>
   Your personal finance dashboard, fully automated — local-first, export-based.
 </p>
 
@@ -30,7 +30,7 @@
 
 ## What is Spectra?
 
-Spectra ingests bank exports (**CSV or PDF**), normalizes messy statement formats, categorizes transactions (via **OpenAI**, **Gemini**, or **fully offline**), and visualizes everything in a **self-hosted local web dashboard**. If you want, it can also sync data to **Google Sheets**.
+Spectra ingests bank exports (**CSV, PDF or OFX**), normalizes messy statement formats, categorizes transactions (via **OpenAI**, **Gemini**, or **fully offline**), and visualizes everything in a **self-hosted local web dashboard**. If you want, it can also sync data to **Google Sheets**.
 
 - **Local-first**: no Open Banking, no bank logins, you stay in control of the export files
 - **Web UI**: run it on your machine at `http://localhost:8080`
@@ -42,7 +42,7 @@ Spectra ingests bank exports (**CSV or PDF**), normalizes messy statement format
 
 Most personal finance tools either require direct access to your bank account or lock your data inside proprietary platforms.
 
-Spectra takes a different approach: it works directly from standard exports (CSV/PDF), keeps the pipeline transparent, and gives you full control over storage and outputs.
+Spectra takes a different approach: it works directly from standard exports (CSV/PDF/OFX), keeps the pipeline transparent, and gives you full control over storage and outputs.
 
 ---
 
@@ -56,7 +56,7 @@ A full-featured local dashboard at `http://localhost:8080`:
 |---|---|
 | **Dashboard** | Cycle-aware overview with income vs expenses, burn-rate insights, monthly charts, and category distribution |
 | **Transactions** | Searchable/sortable ledger with inline category editing |
-| **Upload** | Drag-and-drop CSV/PDF import with editable review, inline merchant/category editing, bulk actions, and future-learning toggle |
+| **Upload** | Drag-and-drop CSV/PDF/OFX import with editable review, inline merchant/category editing, bulk actions, and future-learning toggle |
 | **Budget** | Per-category limits tracked against your active financial cycle with live 🟢/🟡/🔴 status |
 | **Trends** | Month-over-month, year-over-year, and cycle-over-cycle spending analysis |
 | **Subscriptions** | Recurring payments monitor with next charge date, monthly impact, and price-change visibility |

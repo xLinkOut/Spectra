@@ -171,6 +171,15 @@ def test_summary_and_subscriptions_surface_signals(client: TestClient, web_setti
         )
         seed_tx(
             db,
+            tx_id="tx-uncat-old",
+            tx_date=prior_cycle_day,
+            merchant="Another Unknown Merchant",
+            amount=-8.0,
+            category="Uncategorized",
+            original_description="ANOTHER UNKNOWN PURCHASE",
+        )
+        seed_tx(
+            db,
             tx_id="sub-old",
             tx_date=two_cycles_back_day,
             merchant="Netflix",
@@ -200,6 +209,8 @@ def test_summary_and_subscriptions_surface_signals(client: TestClient, web_setti
     summary_response = client.get("/api/summary?scope=cycle")
     assert summary_response.status_code == 200
     summary = summary_response.json()
+    assert summary["uncategorized"] == 1
+    assert summary["uncategorized_total"] == 2
     assert isinstance(summary["insights"], list)
     insight_types = {item["type"] for item in summary["insights"]}
     assert "uncategorized" in insight_types

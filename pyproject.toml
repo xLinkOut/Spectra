@@ -40,9 +40,10 @@ dependencies = [
     "python-multipart>=0.0.6",
     "scikit-learn>=1.3.0",
     "tenacity>=8.0.0",
-    "pdfminer.six>=20221105",
+    "pypdf>=5.0.0",
     "httpx>=0.27.0",
     "pytest>=9.0.2",
+    "ofxparse2>=0.2.2",
 ]
 
 [project.optional-dependencies]
@@ -54,6 +55,7 @@ dev = [
 
 [project.scripts]
 spectra = "spectra.pipeline:main"
+spectra-start = "spectra.docker_start:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

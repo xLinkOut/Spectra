@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [Unreleased]
+
+### Added
+- Docker support with `Dockerfile` + `docker-compose.yml` for one-command local startup (`docker compose up --build`)
+- Support for OFX files.
+
+### Changed
+- Replaced direct dependency `pdfminer.six` with `pypdf` in `pyproject.toml`
+- PDF parser fallback now uses `pypdf` text extraction while keeping `pdfplumber` table extraction
+- Base currency is now configurable from the Settings UI; on first run with an empty DB, setup is required before using the app
+
+---
+
 ## [0.3.0] — 2026-03-12
 
 ### Added

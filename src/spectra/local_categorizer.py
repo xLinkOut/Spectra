@@ -11,6 +11,83 @@ from spectra.ai import CategorisedTransaction
 logger = logging.getLogger("spectra.local")
 
 
+# ── Adaptive ML confidence thresholds ───────────────────────────
+
+_DEFAULT_ML_THRESHOLD = 0.20
+_CATEGORY_ML_THRESHOLDS: dict[str, float] = {
+    # Ambiguous high-volume spend classes use a stricter threshold
+    "Shopping": 0.30,
+    "Groceries": 0.28,
+    "Food & Dining": 0.28,
+    "Entertainment": 0.27,
+    "Transport": 0.26,
+    "Travel": 0.26,
+    "Utilities": 0.24,
+    "Health": 0.24,
+    "Education": 0.24,
+    "Health & Fitness": 0.24,
+    # More specific classes can use a slightly lower threshold
+    "Digital Subscriptions": 0.22,
+    "Insurance": 0.22,
+    "Taxes": 0.20,
+    "Transfer": 0.19,
+    "Transfer In": 0.18,
+    "Reimbursement": 0.18,
+    "Cash Withdrawal": 0.18,
+    "Cash Deposit": 0.18,
+    "Salary": 0.16,
+    "Pension": 0.16,
+}
+
+
+def _ml_threshold_for_category(category: str) -> float:
+    return _CATEGORY_ML_THRESHOLDS.get(category, _DEFAULT_ML_THRESHOLD)
+
+
+# ── Hybrid fallback (keyword / regex) ───────────────────────────
+
+_SALARY_RE = re.compile(
+    r"(?i)\b(stipendio|salary|payroll|nomina|salario|salário|salaire|gehalt|lohn)\b"
+)
+_TRANSFER_IN_RE = re.compile(
+    r"(?i)\b(bonifico ricevuto|accredito bonifico|incoming transfer|transfer received|virement reçu|transferencia recibida)\b"
+)
+_TRANSFER_RE = re.compile(
+    r"(?i)\b(bonifico|bank transfer|wire transfer|virement|transferencia|sepa transfer|giroconto)\b"
+)
+_UTILITIES_RE = re.compile(
+    r"(?i)\b(bolletta|utenza|gas luce|electricity|water bill|telecom|telefonica|tim|vodafone|wind tre|windtre|iliad|fastweb|enel|a2a|iren|hera|acea)\b"
+)
+_RECURRING_DEBIT_RE = re.compile(
+    r"(?i)\b(addebito sdd|direct debit|prélèvement sepa|prelevement sepa|lastschrift)\b"
+)
+_SUBSCRIPTION_BRAND_RE = re.compile(
+    r"(?i)\b(netflix|spotify|apple|youtube|disney|dazn|prime|icloud|google one|openai|chatgpt|adobe|dropbox|github|notion)\b"
+)
+
+
+def _hybrid_keyword_fallback(raw: str, clean_name: str, amount: float) -> str | None:
+    """Rule-based fallback used when ML is missing or below confidence threshold."""
+    text = f"{raw} {clean_name}"
+
+    if _SALARY_RE.search(text) and amount > 0:
+        return "Salary"
+
+    if _TRANSFER_IN_RE.search(text) and amount > 0:
+        return "Transfer In"
+
+    if _RECURRING_DEBIT_RE.search(text) and _SUBSCRIPTION_BRAND_RE.search(text) and amount < 0:
+        return "Digital Subscriptions"
+
+    if _UTILITIES_RE.search(text):
+        return "Utilities"
+
+    if _TRANSFER_RE.search(text):
+        return "Transfer In" if amount > 0 else "Transfer"
+
+    return None
+
+
 # ── Merchant name extraction ─────────────────────────────────────
 
 _STRIP_PREFIXES = re.compile(
@@ -165,7 +242,8 @@ def categorise_local(
     1. Exact merchant memory (clean_name lookup)
     2. Fuzzy match against known merchants
     3. ML classifier (always active — bootstrapped with seed data)
-    4. Fallback → "Uncategorized"
+    4. Hybrid keyword/regex fallback (strong patterns)
+    5. Fallback → "Uncategorized"
 
     Parameters
     ----------
@@ -189,7 +267,7 @@ def categorise_local(
     logger.info("Categorising %d transaction(s) locally", len(transactions))
 
     results: list[CategorisedTransaction] = []
-    stats = {"exact": 0, "fuzzy": 0, "ml": 0, "fallback": 0}
+    stats = {"exact": 0, "fuzzy": 0, "ml": 0, "hybrid": 0, "fallback": 0}
 
     for t in transactions:
         raw = t["raw_description"]
@@ -221,19 +299,45 @@ def categorise_local(
             try:
                 from spectra.ml_classifier import predict
                 pred_cat, confidence = predict(ml_classifier, raw)
-                if confidence >= 0.20:
+                min_confidence = _ml_threshold_for_category(pred_cat)
+                if confidence >= min_confidence:
                     category = pred_cat
                     stats["ml"] += 1
-                    logger.debug("ML: %r → %s (%.0f%%)", raw[:50], category, confidence * 100)
+                    logger.debug(
+                        "ML: %r → %s (%.0f%%, threshold=%.0f%%)",
+                        raw[:50], category, confidence * 100, min_confidence * 100,
+                    )
+                else:
+                    fallback_cat = _hybrid_keyword_fallback(raw, clean_name, amount)
+                    if fallback_cat:
+                        category = fallback_cat
+                        stats["hybrid"] += 1
+                        logger.debug(
+                            "Hybrid fallback: %r → %s (ML %.0f%% < %.0f%%)",
+                            raw[:50], category, confidence * 100, min_confidence * 100,
+                        )
+                    else:
+                        category = "Uncategorized"
+                        stats["fallback"] += 1
+                        logger.debug(
+                            "ML low confidence for %r (%.0f%% < %.0f%%) → Uncategorized",
+                            raw[:50], confidence * 100, min_confidence * 100,
+                        )
+            except Exception:
+                fallback_cat = _hybrid_keyword_fallback(raw, clean_name, amount)
+                if fallback_cat:
+                    category = fallback_cat
+                    stats["hybrid"] += 1
                 else:
                     category = "Uncategorized"
                     stats["fallback"] += 1
-                    logger.debug("ML low confidence for %r (%.0f%%) → Uncategorized", raw[:50], confidence * 100)
-            except Exception:
-                category = "Uncategorized"
-                stats["fallback"] += 1
 
-        # Step 5: Fallback
+        # Step 5: Hybrid fallback (when ML is unavailable)
+        elif (fallback_cat := _hybrid_keyword_fallback(raw, clean_name, amount)):
+            category = fallback_cat
+            stats["hybrid"] += 1
+
+        # Step 6: Fallback
         else:
             category = "Uncategorized"
             stats["fallback"] += 1
@@ -264,8 +368,8 @@ def categorise_local(
         )
 
     logger.info(
-        "Local categorisation: %d exact, %d fuzzy, %d ML, %d fallback",
-        stats["exact"], stats["fuzzy"], stats["ml"], stats["fallback"],
+        "Local categorisation: %d exact, %d fuzzy, %d ML, %d hybrid, %d fallback",
+        stats["exact"], stats["fuzzy"], stats["ml"], stats["hybrid"], stats["fallback"],
     )
 
     return results

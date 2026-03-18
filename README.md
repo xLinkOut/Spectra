@@ -4,7 +4,7 @@
 
 <h1 align="center">Spectra</h1>
 <p align="center">
-  <strong>Bank CSV/PDF → Categorization → Local Dashboard (optional Google Sheets)</strong><br>
+  <strong>Bank CSV/PDF/OFX → Categorization → Local Dashboard (optional Google Sheets)</strong><br>
   Your personal finance dashboard, fully automated — local-first, export-based.
 </p>
 
@@ -30,7 +30,7 @@
 
 ## What is Spectra?
 
-Spectra ingests bank exports (**CSV or PDF**), normalizes messy statement formats, categorizes transactions (via **OpenAI**, **Gemini**, or **fully offline**), and visualizes everything in a **self-hosted local web dashboard**. If you want, it can also sync data to **Google Sheets**.
+Spectra ingests bank exports (**CSV, PDF or OFX**), normalizes messy statement formats, categorizes transactions (via **OpenAI**, **Gemini**, or **fully offline**), and visualizes everything in a **self-hosted local web dashboard**. If you want, it can also sync data to **Google Sheets**.
 
 - **Local-first**: no Open Banking, no bank logins, you stay in control of the export files
 - **Web UI**: run it on your machine at `http://localhost:8080`
@@ -42,7 +42,7 @@ Spectra ingests bank exports (**CSV or PDF**), normalizes messy statement format
 
 Most personal finance tools either require direct access to your bank account or lock your data inside proprietary platforms.
 
-Spectra takes a different approach: it works directly from standard exports (CSV/PDF), keeps the pipeline transparent, and gives you full control over storage and outputs.
+Spectra takes a different approach: it works directly from standard exports (CSV/PDF/OFX), keeps the pipeline transparent, and gives you full control over storage and outputs.
 
 ---
 
@@ -56,7 +56,7 @@ A full-featured local dashboard at `http://localhost:8080`:
 |---|---|
 | **Dashboard** | Cycle-aware overview with income vs expenses, burn-rate insights, monthly charts, and category distribution |
 | **Transactions** | Searchable/sortable ledger with inline category editing |
-| **Upload** | Drag-and-drop CSV/PDF import with editable review, inline merchant/category editing, bulk actions, and future-learning toggle |
+| **Upload** | Drag-and-drop CSV/PDF/OFX import with editable review, inline merchant/category editing, bulk actions, and future-learning toggle |
 | **Budget** | Per-category limits tracked against your active financial cycle with live 🟢/🟡/🔴 status |
 | **Trends** | Month-over-month, year-over-year, and cycle-over-cycle spending analysis |
 | **Subscriptions** | Recurring payments monitor with next charge date, monthly impact, and price-change visibility |
@@ -98,46 +98,142 @@ If enabled, Spectra can also push data to a Google Sheet:
 
 ## Quick Start
 
-### 1) Install
+Choose one startup mode:
+1. **Docker mode** (recommended for most users)
+2. **Native Python mode** (for local development)
+
+### Startup Mode 1 — Docker (recommended)
+
+#### Prerequisites
+1. Install Docker Desktop (macOS/Windows) or Docker Engine + Compose (Linux).
+2. Ensure Docker daemon is running.
+
+#### First startup (clean machine)
+1. Clone and enter the repo:
 
 ```bash
 git clone https://github.com/francescogabrieli/Spectra.git
 cd Spectra
-# Python 3.11+ recommended (3.11, 3.12, 3.13 supported)
+```
+
+2. Start Spectra with build:
+
+macOS/Linux:
+```bash
+./spectra start --build
+```
+
+Windows PowerShell:
+```powershell
+.\spectra.ps1 start -Build
+```
+
+Windows CMD:
+```cmd
+spectra.cmd start -Build
+```
+
+3. Open app: **[http://localhost:8080](http://localhost:8080)**
+4. First-time setup: if database is empty, go to **Settings** and set **Base Currency** before using upload/processing.
+
+#### Daily startup (after first build)
+
+macOS/Linux:
+```bash
+./spectra start
+```
+
+Windows PowerShell:
+```powershell
+.\spectra.ps1 start
+```
+
+Windows CMD:
+```cmd
+spectra.cmd start
+```
+
+#### Stop / Logs / Status
+
+macOS/Linux:
+```bash
+./spectra stop
+./spectra logs
+./spectra status
+```
+
+Windows PowerShell:
+```powershell
+.\spectra.ps1 stop
+.\spectra.ps1 logs
+.\spectra.ps1 status
+```
+
+Windows CMD:
+```cmd
+spectra.cmd stop
+spectra.cmd logs
+spectra.cmd status
+```
+
+#### Docker data persistence
+Data stays on host folders:
+- `./data`
+- `./inbox`
+- `./processed`
+
+#### Docker troubleshooting
+- Error: `Cannot connect to the Docker daemon...`
+  - Start Docker Desktop and retry.
+  - Launchers already try to auto-start Docker Desktop when possible.
+- App not opening in browser:
+  - Open manually: `http://localhost:8080`
+- Need to rebuild dependencies/image after code changes:
+  - Use `start --build`.
+
+### Startup Mode 2 — Native Python
+
+#### 1) Install
+
+```bash
+git clone https://github.com/francescogabrieli/Spectra.git
+cd Spectra
 python3 -m venv .venv
-source .venv/bin/activate      # Mac/Linux
+source .venv/bin/activate      # macOS/Linux
 # .venv\Scripts\activate       # Windows
 pip install -e .
 ```
 
-### 2) Configure `.env`
-
-Create a `.env` file in the project root:
+#### 2) Configure `.env`
 
 ```env
-BASE_CURRENCY=EUR
-
-# Choose one provider:
+# Choose provider
 AI_PROVIDER=local
 # AI_PROVIDER=openai
 # AI_PROVIDER=gemini
 
-# Keys (depending on provider)
+# Optional cloud keys
 # OPENAI_API_KEY=...
 # GEMINI_API_KEY=...
 
-# Optional: Google Sheets sync
+# Optional Google Sheets sync
 # SPREADSHEET_ID=...
 # GOOGLE_SHEETS_CREDENTIALS_FILE=credentials.json
 ```
 
-### 3) Run (web dashboard)
+#### 3) Run web app
 
 ```bash
 python -m spectra --serve
 ```
 
 Open: **[http://localhost:8080](http://localhost:8080)**
+
+#### Native stop
+- Press `Ctrl+C` in the terminal running Spectra.
+
+#### Native note
+- First-time setup is the same: if DB is empty, set **Base Currency** in **Settings** before upload/processing.
 
 ---
 

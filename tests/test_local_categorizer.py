@@ -9,6 +9,7 @@ import pytest
 from spectra.local_categorizer import (
     _extract_merchant_name,
     _fuzzy_match,
+    _ml_threshold_for_category,
     categorise_local,
 )
 
@@ -239,3 +240,65 @@ class TestCategoriseLocal:
         results = categorise_local(txns, merchant_db={}, ml_classifier=None)
         assert len(results) == 1
         assert results[0].category == "Uncategorized"
+
+
+class TestAdaptiveThresholdAndHybridFallback:
+    """Test adaptive ML thresholds and rule-based fallback before Uncategorized."""
+
+    @staticmethod
+    def _txn(desc: str, amount: float = -10.0) -> dict[str, object]:
+        return {
+            "raw_description": desc,
+            "amount": amount,
+            "currency": "EUR",
+            "date": "2026-02-01",
+        }
+
+    def test_category_thresholds_are_adaptive(self):
+        assert _ml_threshold_for_category("Shopping") > _ml_threshold_for_category("Salary")
+        assert _ml_threshold_for_category("Unknown Category") == 0.20
+
+    def test_low_confidence_shopping_rejected(self, monkeypatch: pytest.MonkeyPatch):
+        from spectra import ml_classifier
+
+        monkeypatch.setattr(ml_classifier, "predict", lambda _clf, _desc: ("Shopping", 0.24))
+        results = categorise_local(
+            [self._txn("CARD PAYMENT RANDOM STORE")],
+            merchant_db={},
+            ml_classifier=object(),
+        )
+        assert len(results) == 1
+        assert results[0].category == "Uncategorized"
+
+    def test_low_confidence_ml_can_fallback_to_salary(self, monkeypatch: pytest.MonkeyPatch):
+        from spectra import ml_classifier
+
+        monkeypatch.setattr(ml_classifier, "predict", lambda _clf, _desc: ("Shopping", 0.18))
+        results = categorise_local(
+            [self._txn("STIPENDIO MARZO ACME SRL", amount=2400.00)],
+            merchant_db={},
+            ml_classifier=object(),
+        )
+        assert len(results) == 1
+        assert results[0].category == "Salary"
+
+    def test_low_confidence_ml_can_fallback_to_transfer_in(self, monkeypatch: pytest.MonkeyPatch):
+        from spectra import ml_classifier
+
+        monkeypatch.setattr(ml_classifier, "predict", lambda _clf, _desc: ("Shopping", 0.15))
+        results = categorise_local(
+            [self._txn("BONIFICO RICEVUTO DA MARIO ROSSI", amount=120.00)],
+            merchant_db={},
+            ml_classifier=object(),
+        )
+        assert len(results) == 1
+        assert results[0].category == "Transfer In"
+
+    def test_fallback_works_even_without_ml(self):
+        results = categorise_local(
+            [self._txn("ADDEBITO SDD BOLLETTA ENEL ENERGIA", amount=-96.30)],
+            merchant_db={},
+            ml_classifier=None,
+        )
+        assert len(results) == 1
+        assert results[0].category == "Utilities"

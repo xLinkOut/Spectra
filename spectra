@@ -104,11 +104,11 @@ case "$cmd" in
 
     require_docker
 
-    args=(docker compose up -d)
+    args=(compose up -d)
     if [[ "$DO_BUILD" -eq 1 ]]; then
       args+=(--build)
     fi
-    "${args[@]}"
+    SPECTRA_PORT="$PORT" docker "${args[@]}"
 
     url="http://localhost:${PORT}"
     echo "Spectra is starting on ${url}"

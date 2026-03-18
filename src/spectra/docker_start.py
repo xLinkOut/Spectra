@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 import time
@@ -10,8 +11,8 @@ import webbrowser
 from pathlib import Path
 
 
-def _run(cmd: list[str]) -> None:
-    subprocess.run(cmd, check=True)
+def _run(cmd: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
+    subprocess.run(cmd, check=True, cwd=str(cwd) if cwd else None, env=env)
 
 
 def main() -> None:
@@ -43,9 +44,11 @@ def main() -> None:
     cmd = ["docker", "compose", "up", "-d"]
     if not args.no_build:
         cmd.append("--build")
+    env = os.environ.copy()
+    env["SPECTRA_PORT"] = str(args.port)
 
     try:
-        _run(cmd)
+        _run(cmd, cwd=repo_root, env=env)
     except subprocess.CalledProcessError as exc:
         print(f"Error: failed to start Docker Compose (exit code {exc.returncode}).", file=sys.stderr)
         sys.exit(exc.returncode)

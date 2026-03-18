@@ -92,7 +92,7 @@ If enabled, Spectra can also push data to a Google Sheet:
 - **Rules + learning loop** — Deterministic contains/regex rules, recent feedback history, and retroactive re-application on historical transactions
 - **Actionable insights** — Burn-rate risk, subscription tracking, price changes, anomalies, and cycle-over-cycle change detection surfaced in the dashboard
 - **Idempotent** — Transaction hashes in SQLite prevent duplicate imports
-- **Automation-ready** — Can run on a schedule (cron / GitHub Actions)
+- **Automation-ready** — Can run on a schedule (for example via cron)
 
 ---
 
@@ -135,6 +135,17 @@ spectra.cmd start -Build
 
 3. Open app: **[http://localhost:8080](http://localhost:8080)**
 4. First-time setup: if database is empty, go to **Settings** and set **Base Currency** before using upload/processing.
+
+Custom host port examples:
+```bash
+./spectra start --port 3000 --build
+```
+```powershell
+.\spectra.ps1 start -Port 3000 -Build
+```
+```cmd
+spectra.cmd start -Port 3000 -Build
+```
 
 #### Daily startup (after first build)
 
@@ -187,7 +198,9 @@ Data stays on host folders:
   - Start Docker Desktop and retry.
   - Launchers already try to auto-start Docker Desktop when possible.
 - App not opening in browser:
-  - Open manually: `http://localhost:8080`
+  - Open manually on the port you started, for example `http://localhost:8080` or `http://localhost:3000`
+- Need a different host port:
+  - Start with `./spectra start --port 3000`, `.\spectra.ps1 start -Port 3000`, or `spectra.cmd start -Port 3000`
 - Need to rebuild dependencies/image after code changes:
   - Use `start --build`.
 
@@ -272,18 +285,6 @@ To let Spectra write to your Google Sheet, you need a Google Cloud **Service Acc
 
 * **OpenAI**: create a key and set `OPENAI_API_KEY`, then `AI_PROVIDER=openai`
 * **Gemini**: create a key and set `GEMINI_API_KEY`, then `AI_PROVIDER=gemini`
-
----
-
-## GitHub Actions (optional)
-
-Spectra includes a workflow for nightly automation.
-
-You'll need these repo secrets:
-
-* `OPENAI_API_KEY` or `GEMINI_API_KEY`
-* `SPREADSHEET_ID`
-* `GOOGLE_SHEETS_CREDENTIALS_B64` (base64 of `credentials.json`)
 
 ---
 

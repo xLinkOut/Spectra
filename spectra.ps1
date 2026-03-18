@@ -83,7 +83,12 @@ switch ($Command.ToLowerInvariant()) {
         if ($Build) {
             $args += "--build"
         }
-        & docker @args
+        $Env:SPECTRA_PORT = "$Port"
+        try {
+            & docker @args
+        } finally {
+            Remove-Item Env:SPECTRA_PORT -ErrorAction SilentlyContinue
+        }
 
         $url = "http://localhost:$Port"
         Write-Host "Spectra is starting on $url"

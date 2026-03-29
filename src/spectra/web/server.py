@@ -468,33 +468,33 @@ def _build_summary_insights(
 async def page_dashboard(request: Request):
     if (redirect := _setup_redirect_if_needed(request)):
         return redirect
-    return templates.TemplateResponse("dashboard.html", _template_context(request))
+    return templates.TemplateResponse(request, "dashboard.html", _template_context(request))
 
 
 @app.get("/transactions", response_class=HTMLResponse)
 async def page_transactions(request: Request):
     if (redirect := _setup_redirect_if_needed(request)):
         return redirect
-    return templates.TemplateResponse("transactions.html", _template_context(request))
+    return templates.TemplateResponse(request, "transactions.html", _template_context(request))
 
 
 @app.get("/upload", response_class=HTMLResponse)
 async def page_upload(request: Request):
     if (redirect := _setup_redirect_if_needed(request)):
         return redirect
-    return templates.TemplateResponse("upload.html", _template_context(request))
+    return templates.TemplateResponse(request, "upload.html", _template_context(request))
 
 
 @app.get("/settings", response_class=HTMLResponse)
 async def page_settings(request: Request):
-    return templates.TemplateResponse("settings.html", _template_context(request))
+    return templates.TemplateResponse(request, "settings.html", _template_context(request))
 
 
 @app.get("/subscriptions", response_class=HTMLResponse)
 async def page_subscriptions(request: Request):
     if (redirect := _setup_redirect_if_needed(request)):
         return redirect
-    return templates.TemplateResponse("subscriptions.html", _template_context(request))
+    return templates.TemplateResponse(request, "subscriptions.html", _template_context(request))
 
 
 # ── API: Dashboard Summary ───────────────────────────────────────
@@ -1401,14 +1401,14 @@ async def api_confirm(request: Request):
 async def page_budget(request: Request):
     if (redirect := _setup_redirect_if_needed(request)):
         return redirect
-    return templates.TemplateResponse("budget.html", _template_context(request))
+    return templates.TemplateResponse(request, "budget.html", _template_context(request))
 
 
 @app.get("/trends", response_class=HTMLResponse)
 async def page_trends(request: Request):
     if (redirect := _setup_redirect_if_needed(request)):
         return redirect
-    return templates.TemplateResponse("trends.html", _template_context(request))
+    return templates.TemplateResponse(request, "trends.html", _template_context(request))
 
 
 # ── API: Budget ──────────────────────────────────────────────────

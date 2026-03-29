@@ -223,7 +223,7 @@ _BANKING_PREFIXES = [
 ]
 
 
-def _build_seed_data() -> list[tuple[str, str]]:
+def build_seed_data() -> list[tuple[str, str]]:
     """Expand _SEED_MERCHANTS into a flat list of (description, category) pairs."""
     data: list[tuple[str, str]] = []
     for examples, category in _SEED_MERCHANTS:
@@ -239,7 +239,7 @@ def _build_seed_data() -> list[tuple[str, str]]:
 
 
 # Pre-computed at import time
-_SEED_DATA: list[tuple[str, str]] = _build_seed_data()
+_SEED_DATA: list[tuple[str, str]] = build_seed_data()
 
 # Weight multiplier for user data relative to seed data
 _USER_WEIGHT = 10.0

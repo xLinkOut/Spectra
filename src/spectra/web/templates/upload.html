@@ -97,7 +97,7 @@
 
     async function loadPreviewCategories() {
         try {
-            const res = await fetch('/api/categories');
+            const res = await fetch('/api/categories/options');
             const data = await res.json();
             previewCategories = Array.isArray(data.categories) ? data.categories : [];
             if (previewData.length) {

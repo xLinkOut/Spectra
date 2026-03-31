@@ -38,10 +38,14 @@
     <div class="settings-row">
         <div class="settings-label">
             Financial month starts on
-            <small>Pick the day of the month your cycle begins (1-28). Each cycle runs until the day before the next month's start.</small>
+            <small>Choose a fixed day (1-28) or use the last Monday-Friday of each month.</small>
         </div>
         <div class="settings-control-group">
-            <div class="day-stepper">
+            <select class="settings-select" id="cycleMode" onchange="updateCycleModeUI()">
+                <option value="fixed">Fixed day</option>
+                <option value="last_business_day">Last business day</option>
+            </select>
+            <div class="day-stepper" id="cycleFixedDayStepper">
                 <button class="day-stepper-btn" type="button" onclick="adjustCycleDayStep(-1)" aria-label="Decrease day">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 </button>
@@ -274,6 +278,10 @@
         return parseInt(document.getElementById('cycleStartDay').value, 10) || 1;
     }
 
+    function getCycleModeValue() {
+        return document.getElementById('cycleMode')?.value || 'fixed';
+    }
+
     const MAX_CYCLE_DAY = 28;
 
     function setCycleDayValue(day) {
@@ -288,6 +296,23 @@
         // Wrap: dec from 1 -> 28, inc from 28 -> 1
         const next = ((current - 1 + delta + MAX_CYCLE_DAY) % MAX_CYCLE_DAY) + 1;
         setCycleDayValue(next);
+    }
+
+    function setCycleModeValue(mode) {
+        const normalized = mode === 'last_business_day' ? 'last_business_day' : 'fixed';
+        const select = document.getElementById('cycleMode');
+        if (select) {
+            select.value = normalized;
+        }
+        updateCycleModeUI();
+    }
+
+    function updateCycleModeUI() {
+        const mode = getCycleModeValue();
+        const stepper = document.getElementById('cycleFixedDayStepper');
+        if (stepper) {
+            stepper.style.display = mode === 'fixed' ? '' : 'none';
+        }
     }
 
     function updateThemePreferenceUI(state = window.SpectraTheme?.getState()) {
@@ -351,7 +376,8 @@
     }
 
     function updateCycleUI(settings) {
-        setCycleDayValue(settings.pay_day || settings.cycle_start_day || 1);
+        setCycleModeValue(settings.cycle_mode || 'fixed');
+        setCycleDayValue(settings.fixed_cycle_start_day || settings.cycle_start_day || settings.pay_day || 1);
         const cycle = settings.current_cycle;
         if (cycle) {
             const startFmt = formatSpectraDate(cycle.start, { day: 'numeric', month: 'short', year: 'numeric' });
@@ -375,10 +401,16 @@
         button.textContent = '...';
 
         try {
+            const mode = getCycleModeValue();
+            const payload = { cycle_mode: mode };
+            if (mode === 'fixed') {
+                payload.pay_day = getCycleDayValue();
+            }
+
             const res = await fetch('/api/settings/preferences', {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pay_day: getCycleDayValue() }),
+                body: JSON.stringify(payload),
             });
             const data = await res.json();
             if (!res.ok || !data.ok) {
@@ -811,6 +843,7 @@
     }
 
     setCycleDayValue(1);
+    setCycleModeValue('fixed');
     initThemePreference();
     loadCategoryHints();
     loadRules();

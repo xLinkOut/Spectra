@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spectra"
-version = "0.3.0"
+version = "0.4.0"
 description = "Local-first personal finance dashboard for bank CSV/PDF imports, categorization, and review"
 readme = "README.md"
 license = {text = "AGPL-3.0-or-later"}

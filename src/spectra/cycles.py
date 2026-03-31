@@ -1,16 +1,11 @@
 """Month-to-month financial cycles.
 
-The user picks a *start day* (1-31).  A cycle runs from the start day
-of one calendar month to the day before the start day of the next month.
+Spectra supports two cycle anchors:
 
-Examples (start_day = 25):
-    25 Jan  ->  24 Feb
-    25 Feb  ->  24 Mar
-    25 Mar  ->  24 Apr
+* a fixed day of the month (1-28)
+* the last business day of the month (Mon-Fri only)
 
-When start_day = 1 the cycles equal calendar months:
-    1 Jan  ->  31 Jan
-    1 Feb  ->  28/29 Feb
+A cycle runs from one anchor date to the day before the next month's anchor.
 """
 
 from __future__ import annotations
@@ -22,6 +17,10 @@ from datetime import date, timedelta
 DEFAULT_CYCLE_START_DAY = 1
 MIN_CYCLE_START_DAY = 1
 MAX_CYCLE_START_DAY = 28
+CYCLE_MODE_FIXED = "fixed"
+CYCLE_MODE_LAST_BUSINESS_DAY = "last_business_day"
+VALID_CYCLE_MODES = {CYCLE_MODE_FIXED, CYCLE_MODE_LAST_BUSINESS_DAY}
+DEFAULT_CYCLE_RULE = f"{CYCLE_MODE_FIXED}:{DEFAULT_CYCLE_START_DAY}"
 
 
 def normalize_cycle_start_day(value: int) -> int:
@@ -32,6 +31,60 @@ def normalize_cycle_start_day(value: int) -> int:
             f"cycle_start_day must be between {MIN_CYCLE_START_DAY} and {MAX_CYCLE_START_DAY}"
         )
     return v
+
+
+def normalize_cycle_mode(value: str) -> str:
+    """Validate the cycle mode identifier."""
+    mode = str(value or "").strip().lower()
+    if mode not in VALID_CYCLE_MODES:
+        raise ValueError(f"cycle_mode must be one of: {', '.join(sorted(VALID_CYCLE_MODES))}")
+    return mode
+
+
+def parse_cycle_rule(
+    value: int | str | None,
+    *,
+    clamp_legacy_day: bool = False,
+) -> tuple[str, int | None]:
+    """Parse a stored cycle rule into ``(mode, fixed_day)``.
+
+    Accepted values:
+      * ``14`` or ``"14"``             -> ``("fixed", 14)``
+      * ``"fixed:14"``                 -> ``("fixed", 14)``
+      * ``"last_business_day"``        -> ``("last_business_day", None)``
+    """
+    if value is None or str(value).strip() == "":
+        return CYCLE_MODE_FIXED, DEFAULT_CYCLE_START_DAY
+
+    if isinstance(value, int):
+        return CYCLE_MODE_FIXED, normalize_cycle_start_day(value)
+
+    raw = str(value).strip().lower()
+    if raw == CYCLE_MODE_LAST_BUSINESS_DAY:
+        return CYCLE_MODE_LAST_BUSINESS_DAY, None
+
+    if raw.startswith(f"{CYCLE_MODE_FIXED}:"):
+        raw = raw.split(":", 1)[1].strip()
+
+    try:
+        day = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"invalid cycle rule: {value}") from exc
+
+    if clamp_legacy_day:
+        day = max(MIN_CYCLE_START_DAY, min(day, MAX_CYCLE_START_DAY))
+    else:
+        day = normalize_cycle_start_day(day)
+    return CYCLE_MODE_FIXED, day
+
+
+def serialize_cycle_rule(mode: str, fixed_day: int | None = None) -> str:
+    """Serialize a cycle preference to the DB/API format."""
+    normalized_mode = normalize_cycle_mode(mode)
+    if normalized_mode == CYCLE_MODE_LAST_BUSINESS_DAY:
+        return CYCLE_MODE_LAST_BUSINESS_DAY
+    day = DEFAULT_CYCLE_START_DAY if fixed_day is None else normalize_cycle_start_day(fixed_day)
+    return f"{CYCLE_MODE_FIXED}:{day}"
 
 
 def parse_iso_date(value: str) -> date:
@@ -47,45 +100,56 @@ def _add_months(year: int, month: int, n: int) -> tuple[int, int]:
     return divmod(m, 12)[0], divmod(m, 12)[1] + 1
 
 
-def _anchor(year: int, month: int, start_day: int) -> date:
-    """The start-day anchor for a given (year, month).
-
-    If the month is shorter than start_day the last day of the month is
-    used (e.g. start_day=28 in Feb of a non-leap year → Feb 28).
-    """
+def _fixed_day_anchor(year: int, month: int, start_day: int) -> date:
+    """Resolve the anchor for a fixed monthly day."""
     last = calendar.monthrange(year, month)[1]
     return date(year, month, min(start_day, last))
 
 
+def _last_business_day_anchor(year: int, month: int) -> date:
+    """Resolve the last Monday-Friday of a month."""
+    day = calendar.monthrange(year, month)[1]
+    candidate = date(year, month, day)
+    while candidate.weekday() >= 5:
+        candidate -= timedelta(days=1)
+    return candidate
+
+
+def _anchor(year: int, month: int, cycle_rule: int | str) -> date:
+    """Resolve the anchor date for a given cycle rule."""
+    mode, fixed_day = parse_cycle_rule(cycle_rule)
+    if mode == CYCLE_MODE_LAST_BUSINESS_DAY:
+        return _last_business_day_anchor(year, month)
+    return _fixed_day_anchor(year, month, fixed_day or DEFAULT_CYCLE_START_DAY)
+
+
 # ── public API ────────────────────────────────────────────────────
 
-def cycle_start_for(ref: date, start_day: int) -> date:
+def cycle_start_for(ref: date, cycle_rule: int | str) -> date:
     """Return the start date of the cycle that contains *ref*."""
-    start_day = normalize_cycle_start_day(start_day)
-    anchor = _anchor(ref.year, ref.month, start_day)
+    anchor = _anchor(ref.year, ref.month, cycle_rule)
     if ref >= anchor:
         return anchor
     # ref is before this month's anchor → previous month's anchor
     py, pm = _add_months(ref.year, ref.month, -1)
-    return _anchor(py, pm, start_day)
+    return _anchor(py, pm, cycle_rule)
 
 
-def next_cycle_start(cycle_start: date, start_day: int) -> date:
+def next_cycle_start(cycle_start: date, cycle_rule: int | str) -> date:
     """Return the first day of the next cycle after *cycle_start*."""
-    start_day = normalize_cycle_start_day(start_day)
     ny, nm = _add_months(cycle_start.year, cycle_start.month, 1)
-    return _anchor(ny, nm, start_day)
+    return _anchor(ny, nm, cycle_rule)
 
 
-def cycle_window_for(ref: date, start_day: int) -> tuple[date, date]:
+def cycle_window_for(ref: date, cycle_rule: int | str) -> tuple[date, date]:
     """Return ``(start, end_exclusive)`` for the cycle containing *ref*."""
-    start = cycle_start_for(ref, start_day)
-    return start, next_cycle_start(start, start_day)
+    start = cycle_start_for(ref, cycle_rule)
+    return start, next_cycle_start(start, cycle_rule)
 
 
-def cycle_key_for(ref: date, start_day: int) -> str:
+def cycle_key_for(ref: date, cycle_rule: int | str) -> str:
     """Stable sort-key for the cycle containing *ref*."""
-    return cycle_start_for(ref, start_day).isoformat()
+    return cycle_start_for(ref, cycle_rule).isoformat()
 
 
 def format_cycle_label(start: date, end_exclusive: date) -> str:

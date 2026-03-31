@@ -16,14 +16,19 @@ from fastapi.templating import Jinja2Templates
 
 from spectra.config import load_settings
 from spectra.cycles import (
+    CYCLE_MODE_FIXED,
+    DEFAULT_CYCLE_RULE,
     DEFAULT_CYCLE_START_DAY,
     MAX_CYCLE_START_DAY,
+    VALID_CYCLE_MODES,
     cycle_start_for,
     cycle_window_for,
     format_cycle_label,
     next_cycle_start,
+    parse_cycle_rule,
     normalize_cycle_start_day,
     parse_iso_date,
+    serialize_cycle_rule,
 )
 from spectra.db import BookmarkDB
 from spectra.ml_classifier import build_seed_data
@@ -41,7 +46,7 @@ app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
 templates = Jinja2Templates(directory=str(_TEMPLATES))
 
 _THEME_SETTING_KEY = "theme_preference"
-_PAY_DAY_SETTING_KEY = "cycle_start_day"
+_CYCLE_RULE_SETTING_KEY = "cycle_start_day"
 _BASE_CURRENCY_SETTING_KEY = "base_currency"
 _VALID_THEME_PREFERENCES = {"auto", "light", "dark"}
 _VALID_SUMMARY_SCOPES = {"cycle", "90d", "ytd"}
@@ -78,37 +83,47 @@ def _load_app_preferences(db: BookmarkDB | None = None) -> dict[str, Any]:
         raw_theme = (db.get_app_setting(_THEME_SETTING_KEY, "auto") or "auto").strip().lower()
         theme_preference = raw_theme if raw_theme in _VALID_THEME_PREFERENCES else "auto"
 
-        raw_pay_day = db.get_app_setting(_PAY_DAY_SETTING_KEY, str(DEFAULT_CYCLE_START_DAY))
+        raw_cycle_rule = db.get_app_setting(_CYCLE_RULE_SETTING_KEY, DEFAULT_CYCLE_RULE)
         try:
-            raw_int = int(raw_pay_day or DEFAULT_CYCLE_START_DAY)
-            # Clamp legacy values (29-31) into valid range
-            clamped = max(1, min(raw_int, MAX_CYCLE_START_DAY))
-            pay_day = normalize_cycle_start_day(clamped)
-        except (TypeError, ValueError):
-            pay_day = DEFAULT_CYCLE_START_DAY
+            cycle_mode, fixed_cycle_start_day = parse_cycle_rule(
+                raw_cycle_rule,
+                clamp_legacy_day=True,
+            )
+            cycle_rule = serialize_cycle_rule(cycle_mode, fixed_cycle_start_day)
+        except ValueError:
+            cycle_mode = CYCLE_MODE_FIXED
+            fixed_cycle_start_day = DEFAULT_CYCLE_START_DAY
+            cycle_rule = DEFAULT_CYCLE_RULE
     finally:
         if owns_db:
             db.close()
 
     return {
         "theme_preference": theme_preference,
-        "pay_day": pay_day,
+        "cycle_mode": cycle_mode,
+        "cycle_rule": cycle_rule,
+        "fixed_cycle_start_day": fixed_cycle_start_day,
+        "pay_day": fixed_cycle_start_day,
         # Backward compatibility for older clients.
-        "cycle_start_day": pay_day,
+        "cycle_start_day": fixed_cycle_start_day,
     }
 
 
-def _build_cycle_payload(pay_day: int):
-    from datetime import date, timedelta
+def _build_cycle_payload(cycle_rule: str):
+    from datetime import date
 
-    cycle_start, cycle_end = cycle_window_for(date.today(), pay_day)
+    cycle_start, cycle_end = cycle_window_for(date.today(), cycle_rule)
+    cycle_mode, fixed_cycle_start_day = parse_cycle_rule(cycle_rule, clamp_legacy_day=True)
     return {
         "start": cycle_start.isoformat(),
         "end": cycle_end.isoformat(),
         "label": format_cycle_label(cycle_start, cycle_end),
-        "pay_day": pay_day,
+        "cycle_mode": cycle_mode,
+        "cycle_rule": cycle_rule,
+        "fixed_cycle_start_day": fixed_cycle_start_day,
+        "pay_day": cycle_start.day,
         # Backward compatibility.
-        "start_day": pay_day,
+        "start_day": cycle_start.day,
     }
 
 
@@ -288,7 +303,7 @@ def _build_summary_insights(
     rows: list[tuple[str, str, float, str]],
     period_start,
     period_end,
-    pay_day: int,
+    cycle_rule: str,
     total_spent: float,
     uncategorized: int,
     burn_rate: dict[str, Any] | None,
@@ -348,7 +363,7 @@ def _build_summary_insights(
     current_expenses: list[tuple[str, float, str]] = []
     subscription_by_merchant: dict[str, list[tuple[object, float]]] = defaultdict(list)
 
-    previous_cycle_start = cycle_start_for(period_start - timedelta(days=1), pay_day)
+    previous_cycle_start = cycle_start_for(period_start - timedelta(days=1), cycle_rule)
     previous_cycle_end = period_start
 
     for tx_date_str, clean_name, amount, category in rows:
@@ -511,13 +526,13 @@ async def api_summary(scope: str = Query("cycle")):
         )
 
     preferences = _load_app_preferences()
-    pay_day = preferences["pay_day"]
+    cycle_rule = preferences["cycle_rule"]
 
     from datetime import date, timedelta
 
     today = date.today()
     if scope == "cycle":
-        period_start, period_end = cycle_window_for(today, pay_day)
+        period_start, period_end = cycle_window_for(today, cycle_rule)
         scope_label = format_cycle_label(period_start, period_end)
     elif scope == "90d":
         period_end = today + timedelta(days=1)
@@ -549,10 +564,11 @@ async def api_summary(scope: str = Query("cycle")):
         return {
             "total_spent": 0, "total_income": 0, "subscriptions": 0,
             "uncategorized": 0, "uncategorized_total": 0, "by_category": {}, "monthly": {},
-            "monthly_ranges": {}, "top_merchants": [], "current_cycle": _build_cycle_payload(pay_day),
+            "monthly_ranges": {}, "top_merchants": [], "current_cycle": _build_cycle_payload(cycle_rule),
             "scope": scope, "scope_label": scope_label,
             "selected_period": {"start": period_start.isoformat(), "end": period_end.isoformat(), "label": scope_label},
-            "pay_day": pay_day, "cycle_start_day": pay_day, "has_data": False,
+            **preferences,
+            "has_data": False,
             "burn_rate": burn_rate,
             "insights": [],
         }
@@ -572,8 +588,8 @@ async def api_summary(scope: str = Query("cycle")):
 
     def _monthly_bucket(tx_date):
         if scope == "cycle":
-            bucket_start = cycle_start_for(tx_date, pay_day)
-            bucket_end = next_cycle_start(bucket_start, pay_day)
+            bucket_start = cycle_start_for(tx_date, cycle_rule)
+            bucket_end = next_cycle_start(bucket_start, cycle_rule)
         else:
             bucket_start = tx_date.replace(day=1)
             if bucket_start.month == 12:
@@ -627,7 +643,7 @@ async def api_summary(scope: str = Query("cycle")):
         rows=rows,
         period_start=period_start,
         period_end=period_end,
-        pay_day=pay_day,
+        cycle_rule=cycle_rule,
         total_spent=total_spent,
         uncategorized=uncategorized,
         burn_rate=burn_rate,
@@ -644,7 +660,7 @@ async def api_summary(scope: str = Query("cycle")):
         "monthly": monthly_data,
         "monthly_ranges": monthly_ranges_data,
         "top_merchants": top5,
-        "current_cycle": _build_cycle_payload(pay_day),
+        "current_cycle": _build_cycle_payload(cycle_rule),
         "scope": scope,
         "scope_label": scope_label,
         "selected_period": {
@@ -652,8 +668,7 @@ async def api_summary(scope: str = Query("cycle")):
             "end": period_end.isoformat(),
             "label": scope_label,
         },
-        "pay_day": pay_day,
-        "cycle_start_day": pay_day,
+        **preferences,
         "has_data": in_scope_count > 0,
         "burn_rate": burn_rate,
         "insights": insights,
@@ -866,7 +881,7 @@ async def api_settings():
         "category_count": len(cats),
         "sheets_connected": bool(settings.spreadsheet_id),
         **preferences,
-        "current_cycle": _build_cycle_payload(preferences["pay_day"]),
+        "current_cycle": _build_cycle_payload(preferences["cycle_rule"]),
     }
 
 
@@ -894,21 +909,39 @@ async def api_update_preferences(request: Request):
             )
         updates[_BASE_CURRENCY_SETTING_KEY] = base_currency
 
-    raw_pay_day = body.get("pay_day", body.get("cycle_start_day"))
-    if raw_pay_day is not None:
-        try:
-            pay_day = normalize_cycle_start_day(int(raw_pay_day))
-        except (TypeError, ValueError):
-            return JSONResponse(
-                {"error": f"pay_day must be an integer between 1 and {MAX_CYCLE_START_DAY}"},
-                status_code=400,
-            )
-        updates[_PAY_DAY_SETTING_KEY] = str(pay_day)
-
-    if not updates:
-        return JSONResponse({"error": "No supported preference fields provided"}, status_code=400)
-
     with _get_db() as db:
+        raw_pay_day = body.get("pay_day", body.get("cycle_start_day"))
+        raw_cycle_mode = body.get("cycle_mode")
+        if raw_cycle_mode is not None or raw_pay_day is not None:
+            current_preferences = _load_app_preferences(db)
+
+            if raw_cycle_mode is None:
+                cycle_mode = CYCLE_MODE_FIXED
+            else:
+                cycle_mode = str(raw_cycle_mode or "").strip().lower()
+                if cycle_mode not in VALID_CYCLE_MODES:
+                    return JSONResponse(
+                        {"error": f"cycle_mode must be one of {', '.join(sorted(VALID_CYCLE_MODES))}"},
+                        status_code=400,
+                    )
+
+            fixed_cycle_start_day = current_preferences["fixed_cycle_start_day"] or DEFAULT_CYCLE_START_DAY
+            if raw_pay_day is not None:
+                try:
+                    fixed_cycle_start_day = normalize_cycle_start_day(int(raw_pay_day))
+                except (TypeError, ValueError):
+                    return JSONResponse(
+                        {"error": f"pay_day must be an integer between 1 and {MAX_CYCLE_START_DAY}"},
+                        status_code=400,
+                    )
+            elif cycle_mode == CYCLE_MODE_FIXED and current_preferences["cycle_mode"] != CYCLE_MODE_FIXED:
+                fixed_cycle_start_day = DEFAULT_CYCLE_START_DAY
+
+            updates[_CYCLE_RULE_SETTING_KEY] = serialize_cycle_rule(cycle_mode, fixed_cycle_start_day)
+
+        if not updates:
+            return JSONResponse({"error": "No supported preference fields provided"}, status_code=400)
+
         for key, value in updates.items():
             db.set_app_setting(key, value)
         preferences = _load_app_preferences(db)
@@ -920,7 +953,7 @@ async def api_update_preferences(request: Request):
         **preferences,
         "currency": effective_currency,
         "requires_base_currency_setup": requires_currency_setup,
-        "current_cycle": _build_cycle_payload(preferences["pay_day"]),
+        "current_cycle": _build_cycle_payload(preferences["cycle_rule"]),
     }
 
 
@@ -1418,8 +1451,7 @@ async def page_trends(request: Request):
 async def api_budget():
     """Return per-category budget status for the current month."""
     preferences = _load_app_preferences()
-    pay_day = preferences["pay_day"]
-    current_cycle = _build_cycle_payload(pay_day)
+    current_cycle = _build_cycle_payload(preferences["cycle_rule"])
 
     with _get_db() as db:
         # All expense rows for the current financial cycle
@@ -1508,7 +1540,7 @@ async def api_trends():
     from collections import defaultdict
 
     preferences = _load_app_preferences()
-    pay_day = preferences["pay_day"]
+    cycle_rule = preferences["cycle_rule"]
 
     with _get_db() as db:
         rows = db._conn.execute(
@@ -1516,7 +1548,7 @@ async def api_trends():
         ).fetchall()
 
     if not rows:
-        return {"years": [], "by_year": {}, "period_series": [], "pay_day": pay_day, "cycle_start_day": pay_day}
+        return {"years": [], "by_year": {}, "period_series": [], **preferences}
 
     # Aggregate by year and month
     by_year: dict[str, dict] = {}
@@ -1526,7 +1558,7 @@ async def api_trends():
 
     for date_str, amount, category in rows:
         tx_date = parse_iso_date(date_str)
-        cycle_start = cycle_start_for(tx_date, pay_day)
+        cycle_start = cycle_start_for(tx_date, cycle_rule)
         year = str(cycle_start.year)
         month = cycle_start.isoformat()
 
@@ -1565,7 +1597,7 @@ async def api_trends():
     monthly_series = [
         {
             "period_start": m,
-            "period_end": next_cycle_start(parse_iso_date(m), pay_day).isoformat(),
+            "period_end": next_cycle_start(parse_iso_date(m), cycle_rule).isoformat(),
             "income": round(monthly_income.get(m, 0), 2),
             "expenses": round(monthly_expense.get(m, 0), 2),
         }
@@ -1576,8 +1608,7 @@ async def api_trends():
         "years": years,
         "by_year": year_stats,
         "period_series": monthly_series,
-        "pay_day": pay_day,
-        "cycle_start_day": pay_day,
+        **preferences,
     }
 
 
@@ -1589,8 +1620,7 @@ async def api_subscriptions():
     from statistics import median
 
     preferences = _load_app_preferences()
-    pay_day = preferences["pay_day"]
-    cycle_start, cycle_end = cycle_window_for(date.today(), pay_day)
+    cycle_start, cycle_end = cycle_window_for(date.today(), preferences["cycle_rule"])
 
     with _get_db() as db:
         rows = db._conn.execute(

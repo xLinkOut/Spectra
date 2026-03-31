@@ -108,6 +108,39 @@ def test_base_currency_can_be_set_via_preferences(client: TestClient, web_settin
         assert db.get_app_setting("base_currency") == "USD"
 
 
+def test_cycle_mode_can_be_set_to_last_business_day(client: TestClient, web_settings: Settings) -> None:
+    response = client.patch(
+        "/api/settings/preferences",
+        json={"cycle_mode": "last_business_day"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["cycle_mode"] == "last_business_day"
+    assert payload["cycle_rule"] == "last_business_day"
+    assert payload["fixed_cycle_start_day"] is None
+    assert payload["current_cycle"]["cycle_mode"] == "last_business_day"
+
+    with BookmarkDB(web_settings.db_path) as db:
+        assert db.get_app_setting("cycle_start_day") == "last_business_day"
+
+
+def test_legacy_numeric_cycle_setting_is_clamped_and_exposed_as_fixed_rule(
+    client: TestClient,
+    web_settings: Settings,
+) -> None:
+    with BookmarkDB(web_settings.db_path) as db:
+        db.set_app_setting("cycle_start_day", "31")
+
+    response = client.get("/api/settings")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["cycle_mode"] == "fixed"
+    assert payload["fixed_cycle_start_day"] == 28
+    assert payload["pay_day"] == 28
+    assert payload["cycle_rule"] == "fixed:28"
+
+
 def test_rule_lifecycle_and_reapply_history(client: TestClient, web_settings: Settings) -> None:
     with BookmarkDB(web_settings.db_path) as db:
         seed_tx(

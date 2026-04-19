@@ -73,6 +73,7 @@
     }
 
     async function loadTransactions(page = 1) {
+        await loadCurrency();
         currentPage = page;
         const search = document.getElementById('searchInput').value;
         const category = document.getElementById('categoryFilter').value;

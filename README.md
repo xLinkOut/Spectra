@@ -211,7 +211,7 @@ Data stays on host folders:
 ```bash
 git clone https://github.com/francescogabrieli/Spectra.git
 cd Spectra
-uv sync
+uv sync --locked
 ```
 
 #### 2) Configure `.env`

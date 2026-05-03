@@ -12,7 +12,9 @@ WORKDIR /app
 
 COPY . /app
 
-RUN uv pip install -e . --no-cache
+RUN uv sync --locked --no-dev
+
+ENV PATH="/app/.venv/bin:${PATH}"
 
 RUN mkdir -p /app/data /app/inbox /app/processed
 
